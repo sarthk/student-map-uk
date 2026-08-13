@@ -33,7 +33,7 @@ import requests
 
 import config
 
-UA = {"User-Agent": "crimemap-uk/0.1 (+OGL v3 data)"}
+UA = {"User-Agent": "student-map-uk/0.1 (+OGL v3 data)"}
 
 
 # --- 1. Aggregate crime -------------------------------------------------------

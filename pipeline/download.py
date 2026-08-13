@@ -49,7 +49,7 @@ import config
 from crime_quality import (CrimeDataQualityError, discover_street_files,
                            quality_metadata, trailing_months, write_manifest)
 
-UA = {"User-Agent": "crimemap-uk/0.1 (+https://github.com/; OGL v3 data)"}
+UA = {"User-Agent": "student-map-uk/0.1 (+https://github.com/sarthk/student-map-uk; OGL v3 data)"}
 DATA_BASE = "https://data.police.uk/data/"
 ARCHIVE_URL = "https://data.police.uk/data/archive/{month}.zip"
 TS001_ZIP_URL = "https://www.nomisweb.co.uk/output/census/2021/census2021-ts001.zip"
@@ -187,7 +187,7 @@ def download_crime_route_b(months: list[str], poll_secs: int = 8, timeout_secs: 
         "date_to": months[-1],
         "forces": force,
         "include_crime": "on",
-        "description": f"crimemap-uk {force} street {months[0]}..{months[-1]}",
+        "description": f"student-map-uk {force} street {months[0]}..{months[-1]}",
     }
     posted = s.post(DATA_BASE, data=payload, headers={"Referer": DATA_BASE},
                     timeout=60, allow_redirects=False)

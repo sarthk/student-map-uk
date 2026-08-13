@@ -1,5 +1,7 @@
 # Students Map UK
 
+**Live app:** https://sarthk.github.io/student-map-uk/
+
 A static, postcode-first discovery map for students finding useful places around an
 active UK postcode. Search once to load nearby study spaces, food, groceries, health
 services, fitness, transport, everyday errands, personal care, social venues and

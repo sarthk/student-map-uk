@@ -32,7 +32,7 @@ import config
 from crime_quality import (CrimeDataQualityError, discover_street_files,
                            quality_metadata, select_latest_window, write_manifest)
 
-UA = {"User-Agent": "crimemap-uk/0.2 (+OGL v3 data)"}
+UA = {"User-Agent": "student-map-uk/0.2 (+OGL v3 data)"}
 
 # Each bundle's rate/percentile/flag/total is baked into the tiles as scalars under
 # a short suffix, so the MapLibre paint can recolour on toggle with no client recompute.
