@@ -1,61 +1,110 @@
-# Data sources — verified endpoints (recon 2026-06-29)
+# CrimeMap UK data sources
 
-All four sources confirmed live against real requests on 2026-06-29. All are
-free under the Open Government Licence v3 (attribution required). Pin the dated
-URLs for reproducible monthly builds.
+This file documents the inputs used by the current crime-reference product. Runtime URLs
+and column names live in `pipeline/config.py`; the validation contract lives in
+`pipeline/crime_quality.py`.
 
-## 1. Crime — police.uk street CSVs
+All public-sector inputs below are reused under the Open Government Licence v3. Source
+availability does not make the resulting map a complete measure of crime.
 
-No per-force-per-month CSV URL exists; CSVs only ship inside a zip.
+## 1. Police-recorded street crime — police.uk
 
-- **Latest published month:** discover via `GET https://data.police.uk/api/crimes-street-dates`
-  → JSON array, newest first; `[0].date` = latest (was **2026-04** on 2026-06-29).
-  ⚠️ The per-element `stop-and-search` force list is **stop-and-search only** —
-  it does NOT confirm street-level coverage. Verify by checking the extracted zip.
-- **Rolling 12-month window (as of 2026-06):** `2025-05 … 2026-04`.
-- **Route B (default, targeted ~tens of MB):** POST the filter form at
-  `https://data.police.uk/data/` with `csrfmiddlewaretoken` (scraped from the GET),
-  `date_from`, `date_to`, `forces=west-yorkshire`, `include_crime=on`, `Referer` header.
-  → `302 /data/fetch/<UUID>/`. Poll that URL until it serves the zip
-  ("…being generated… come back later" while building).
-- **Route A (fallback, ~1.6 GB):** `GET https://data.police.uk/data/archive/<YYYY-MM>.zip`
-  (or `latest.zip`) → 302 to `policeuk-data.s3.amazonaws.com`. Cumulative: one zip
-  holds every force × ~3 years. Extract only WY street files.
-- **Force id:** `west-yorkshire`. **In-zip path:** `<YYYY-MM>/<YYYY-MM>-west-yorkshire-street.csv`.
-- **CSV columns:** `Crime ID, Month, Reported by, Falls within, Longitude, Latitude,
-  Location, LSOA code, LSOA name, Crime type, Last outcome category, Context`.
-- **Vintage:** LSOA codes are **2021** (changelog: switched 2011→2021 in June 2023).
-- **Caveats:** `Crime ID` blank for some rows (e.g. anti-social behaviour); coords
-  anonymised/snapped; some forces had submission gaps in early-2026 months — don't
-  assume all 12 WY files exist, check.
+- Latest-month discovery: `https://data.police.uk/api/crimes-street-dates`
+- National archive: `https://data.police.uk/data/archive/<YYYY-MM>.zip`
+- Archive entry pattern: `<YYYY-MM>/<YYYY-MM>-<force>-street.csv`
+- Public information and caveats: `https://data.police.uk/about/`
 
-## 2. LSOA 2021 boundaries — ONS Open Geography Portal (ArcGIS)
+`download.py --national` uses HTTP Range reads against the archive so it can extract the
+requested rolling-window entries without downloading the complete cumulative zip. The
+full-archive `--archive` route is a resumable fallback. The custom form route supports one
+force and must not be used while claiming a national build.
 
-- **Service (FeatureServer, layer 0):**
-  `https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Lower_layer_Super_Output_Areas_December_2021_Boundaries_EW_BGC_V5/FeatureServer/0`
-  (BGC = generalised clipped, web-sized; BSC_V4 also available if smaller needed).
-- **Query for GeoJSON:** `/query?where=<sql>&outFields=LSOA21CD,LSOA21NM&f=geojson`
-- **Fields:** `LSOA21CD` (code), `LSOA21NM` (name), plus FID/LAT/LONG/BNG_*/GlobalID.
-- **maxRecordCount = 2000.** National ~35k needs pagination (`resultOffset`/`resultRecordCount`) — that's Phase 2.
-- **West Yorkshire = 1,404 LSOAs** (districts Leeds, Bradford, Kirklees, Calderdale,
-  Wakefield) → **fits in ONE query** (1404 < 2000). WY filter:
-  `LSOA21NM LIKE 'Leeds%' OR LSOA21NM LIKE 'Bradford%' OR LSOA21NM LIKE 'Kirklees%' OR LSOA21NM LIKE 'Calderdale%' OR LSOA21NM LIKE 'Wakefield%'`
-  (or, more robust, filter to the LSOA codes present in the WY crime data).
+Required CSV fields:
 
-## 3. LSOA 2021 population — ONS Census 2021 TS001 (via Nomis)
+```text
+Month
+LSOA code
+LSOA name
+Crime type
+```
 
-- **Bulk zip:** `https://www.nomisweb.co.uk/output/census/2021/census2021-ts001.zip`
-  (~1.87 MB) → extract `census2021-ts001-lsoa.csv` (35,672 rows = 33,755 E01 + 1,917 W01).
-- **Key column:** `geography code` (E01…/W01…, 2021 vintage).
-- **Population column:** `Residence type: Total; measures: Value`
-  (= household + communal establishment; do NOT use a single residence sub-type).
-- **API alt (paginated, 25k/page):** `NM_2021_1.data.csv?...&geography=TYPE151&c2021_restype_3=0&measures=20100`.
+The pipeline expects the 14 canonical police.uk street-crime categories defined in
+`config.ALL_CRIME_TYPES`. A new or misspelled category stops the build rather than silently
+falling out of totals.
 
-## 4. Postcode → LSOA — postcodes.io
+Important caveats:
 
-- **Single:** `GET https://api.postcodes.io/postcodes/{postcode}` (URL-encode space → `%20`).
-  404 + `result:null` on bad postcode.
-- **2021 LSOA code:** `result.codes.lsoa21` (the generic `result.codes.lsoa` currently
-  mirrors 2021 but read `lsoa21` explicitly). Name: `result.lsoa21`. Coords:
-  `result.latitude` / `result.longitude`.
-- **Bulk:** `POST https://api.postcodes.io/postcodes` with `{"postcodes":[…]}` (≤100/req).
+- only offences reported to and recorded by police appear;
+- recording practice, police activity and reporting behaviour vary;
+- coordinates are anonymised and snapped to nearby locations;
+- an incident near an LSOA boundary may be assigned to an adjacent area;
+- force submissions can be absent for a month, so file presence must be audited;
+- the force list returned inside the dates API concerns stop-and-search availability and
+  is not evidence that every street-crime CSV is present.
+
+Coverage is checked against the 43 territorial forces in England and Wales. British
+Transport Police files can be present and are aggregated, but are reported separately
+from that territorial completeness denominator.
+
+The committed July 2025–June 2026 artifacts have 17 known territorial source-month gaps:
+Greater Manchester (12) and Gloucestershire (5). Their configured LSOA areas are excluded
+from rate and percentile calculation and withheld by the frontend. Exact gaps are written
+to the local manifest and public metadata.
+
+## 2. 2021 LSOA boundaries — ONS Open Geography Portal
+
+Feature service, layer 0:
+
+`https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Lower_layer_Super_Output_Areas_December_2021_Boundaries_EW_BGC_V5/FeatureServer/0`
+
+Fields used: `LSOA21CD` and `LSOA21NM`. The service has a page-size limit, so
+`build_national.py` paginates until all 35,672 England and Wales features are collected
+and caches the result under `pipeline/data/interim/`.
+
+The BGC boundary is generalised and clipped for web mapping. It is suitable for locating
+the statistical neighbourhood, not cadastral or address-level analysis.
+
+## 3. Census 2021 usual-resident population — ONS/Nomis TS001
+
+- Bulk zip: `https://www.nomisweb.co.uk/output/census/2021/census2021-ts001.zip`
+- Member: `census2021-ts001-lsoa.csv`
+- Join key: `geography code`
+- Value: `Residence type: Total; measures: Value`
+
+This directly matches the 2021 LSOA geography. The total includes household and communal
+establishment residents. It does not represent workers, visitors, shoppers or students
+whose usual residence was elsewhere, and its 2021 vintage is older than the crime window.
+
+## 4. Postcode and coordinate lookup — postcodes.io
+
+- Postcode: `GET https://api.postcodes.io/postcodes/{postcode}`
+- Coordinate lookup: `GET https://api.postcodes.io/postcodes?lon={lon}&lat={lat}`
+- LSOA field: `result.codes.lsoa21`
+
+The frontend calls this third-party service only after a user submits a postcode or grants
+location permission and presses the location button. The privacy notice must remain next
+to the search flow. A postcode is only a locator for the containing LSOA.
+
+## 5. Optional legacy property inputs
+
+`config.py` and `download.py` retain old ONS house-price, rent and LSOA-to-LAD inputs for
+backward compatibility with the generated artifact schema. The current frontend does not
+use or display them because their geography, vintage and property mix cannot support a
+responsible investment ranking. They are not required for the crime-only download flow.
+
+## 6. Build evidence
+
+Every national build should retain or publish:
+
+- exact start and end month;
+- generation time;
+- expected, observed and missing force-month pairs;
+- selected filenames and ignored out-of-window files;
+- input checksums or ETags where possible;
+- category and row counts;
+- LSOA join counts and missing population values;
+- denominator source, vintage and geography;
+- unavailable area prefixes and the build Git commit.
+
+Missing data must block or be explicitly withheld. It must never be converted into a zero
+and ranked as lower crime.

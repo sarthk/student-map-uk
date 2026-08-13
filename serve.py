@@ -19,6 +19,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent / "web"
 
 
+def parse_range_header(value: str | None, size: int) -> tuple[int, int] | None:
+    """Resolve one RFC 7233 byte range, including open and suffix ranges."""
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", value or "")
+    if match is None or size <= 0:
+        return None
+    first, last = match.groups()
+    if not first and not last:
+        return None
+    if not first:
+        suffix = int(last)
+        if suffix <= 0:
+            return None
+        return max(0, size - suffix), size - 1
+    start = int(first)
+    end = int(last) if last else size - 1
+    if start >= size or start > end:
+        return None
+    return start, min(end, size - 1)
+
+
 class RangeHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **k):
         super().__init__(*a, directory=str(ROOT), **k)
@@ -31,16 +51,14 @@ class RangeHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         rng = self.headers.get("Range")
         path = self.translate_path(self.path)
-        m = re.match(r"bytes=(\d+)-(\d*)", rng or "")
-        if not rng or not m or not os.path.isfile(path):
+        if not rng or not os.path.isfile(path):
             return super().do_GET()
         size = os.path.getsize(path)
-        start = int(m.group(1))
-        end = int(m.group(2)) if m.group(2) else size - 1
-        end = min(end, size - 1)
-        if start > end:
+        resolved = parse_range_header(rng, size)
+        if resolved is None:
             self.send_error(416, "Requested Range Not Satisfiable")
             return
+        start, end = resolved
         length = end - start + 1
         self.send_response(206)
         self.send_header("Content-Type", self.guess_type(path))

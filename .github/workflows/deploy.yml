@@ -1,8 +1,8 @@
 name: Deploy to GitHub Pages
 
-# Publishes the static site in web/ (the committed west-yorkshire.geojson is
-# served alongside it). The "live tracker" is: re-run the pipeline monthly,
-# commit the refreshed web/data/west-yorkshire.geojson, and this redeploys.
+# Publishes Students Map UK from web/: postcode place finder, optional game,
+# and preserved legacy crime artifacts. The public place finder loads current
+# OpenStreetMap data on request and needs no server-side application runtime.
 
 on:
   push:
@@ -27,6 +27,20 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install validation dependencies
+        run: python -m pip install -r pipeline/requirements.txt
+      - name: Run pipeline regressions
+        run: python -m unittest discover -s pipeline/tests -v
+      - name: Validate code and committed web data
+        run: |
+          python -m compileall -q pipeline serve.py
+          python pipeline/validate_web_data.py
+          node --check web/app.js
+          node --check web/game.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

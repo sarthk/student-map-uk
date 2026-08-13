@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f7f4">
+  <meta name="description" content="Freshers Week: a quick, accessible student-life budget game from Students Map UK.">
+  <title>Freshers Week — Students Map UK</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="game.css">
+  <script defer src="game.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#game">Skip to the game</a>
+
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="Students Map UK home">
+      <span class="brand-mark" aria-hidden="true"><span></span></span>
+      <span class="brand-copy">
+        <strong>Students Map UK</strong>
+        <small>Freshers Week mini-game</small>
+      </span>
+    </a>
+    <a class="back-link" href="index.html">
+      <span aria-hidden="true">←</span>
+      Back to the map
+    </a>
+  </header>
+
+  <main class="page-shell">
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">Seven stops · about two minutes</p>
+      <h1 id="page-title">Can your budget survive Freshers Week?</h1>
+      <p class="lede">Make seven everyday student choices. Keep some cash in your pocket, look after your energy and earn Freshers Points along the way.</p>
+
+      <div class="week-map" aria-hidden="true">
+        <span class="route-line"></span>
+        <span class="route-stop route-stop-a">Halls</span>
+        <span class="route-stop route-stop-b">Campus</span>
+        <span class="route-stop route-stop-c">Library</span>
+        <span class="route-stop route-stop-d">Kitchen</span>
+      </div>
+
+      <div class="how-to-play">
+        <h2>How to play</h2>
+        <ol>
+          <li><span>1</span><p><strong>Read the situation.</strong> Each stop has three useful—or tempting—options.</p></li>
+          <li><span>2</span><p><strong>Choose with touch or keyboard.</strong> Press <kbd>1</kbd>, <kbd>2</kbd> or <kbd>3</kbd>; arrow keys also move between choices.</p></li>
+          <li><span>3</span><p><strong>Stay balanced.</strong> Finish with budget and energy left for a bonus.</p></li>
+        </ol>
+      </div>
+
+      <div class="privacy-note">
+        <span aria-hidden="true">✓</span>
+        <p>No sign-in, tracking, adverts or saved scores. Your game stays in this tab.</p>
+      </div>
+    </section>
+
+    <section class="game-frame" id="game" aria-labelledby="game-title">
+      <div class="game-topline">
+        <div>
+          <p class="game-kicker">Freshers Week</p>
+          <h2 id="game-title">The £45 challenge</h2>
+        </div>
+        <span class="game-badge">Turn-based · no rush</span>
+      </div>
+
+      <section class="start-screen" id="start-screen">
+        <div class="starter-pack" aria-hidden="true">
+          <span class="pack-card pack-card-one">£45</span>
+          <span class="pack-card pack-card-two">⚡ 4</span>
+          <span class="pack-card pack-card-three">7 stops</span>
+        </div>
+        <h3>Ready for your first week?</h3>
+        <p>You begin with <strong>£45</strong> and <strong>4 energy</strong>. Every option shows its cost and effect before you choose—there are no hidden purchases or chance prizes.</p>
+        <button class="primary-button" id="start-button" type="button">Start Freshers Week</button>
+        <p class="shortcut-hint">Keyboard: press <kbd>Enter</kbd> on the button to begin.</p>
+      </section>
+
+      <section class="play-screen" id="play-screen" hidden>
+        <div class="stats" aria-label="Current game statistics">
+          <div class="stat stat-budget">
+            <span class="stat-icon" aria-hidden="true">£</span>
+            <span><small>Budget</small><strong id="budget-value">£45</strong></span>
+          </div>
+          <div class="stat stat-energy">
+            <span class="stat-icon" aria-hidden="true">⚡</span>
+            <span><small>Energy</small><strong id="energy-value">4 / 6</strong></span>
+          </div>
+          <div class="stat stat-score">
+            <span class="stat-icon" aria-hidden="true">★</span>
+            <span><small>Freshers Points</small><strong id="score-value">0</strong></span>
+          </div>
+        </div>
+
+        <div class="progress-wrap">
+          <div class="progress-copy">
+            <span id="progress-label">Stop 1 of 7</span>
+            <span id="progress-percent">14%</span>
+          </div>
+          <div class="progress-track" role="progressbar" aria-labelledby="progress-label" aria-valuemin="0" aria-valuemax="7" aria-valuenow="1" id="progress-track">
+            <span id="progress-fill"></span>
+          </div>
+          <ol class="progress-stops" id="progress-stops" aria-label="Freshers Week progress"></ol>
+        </div>
+
+        <article class="situation-card" id="situation-card">
+          <div class="situation-meta">
+            <span id="situation-place">Arrival day</span>
+            <span id="situation-day">Monday</span>
+          </div>
+          <h3 id="situation-title" tabindex="-1">From station to halls</h3>
+          <p id="situation-text"></p>
+
+          <fieldset class="choices" id="choices-fieldset">
+            <legend class="sr-only">Choose one option</legend>
+            <div class="choice-list" id="choice-list"></div>
+          </fieldset>
+
+          <div class="feedback" id="feedback" role="status" aria-live="polite" hidden></div>
+          <button class="continue-button" id="continue-button" type="button" hidden>Continue to the next stop <span aria-hidden="true">→</span></button>
+        </article>
+
+        <p class="controls-note"><strong>Keys:</strong> <kbd>1</kbd>–<kbd>3</kbd> choose · <kbd>←</kbd><kbd>→</kbd> move · <kbd>Enter</kbd> activate</p>
+      </section>
+
+      <section class="end-screen" id="end-screen" hidden aria-labelledby="result-title">
+        <div class="result-burst" aria-hidden="true"><span>★</span></div>
+        <p class="result-label">Week complete</p>
+        <h3 id="result-title" tabindex="-1">Freshers Week finished!</h3>
+        <p class="result-rank" id="result-rank"></p>
+
+        <div class="final-score">
+          <span>Final score</span>
+          <strong id="final-score-value">0</strong>
+          <small id="bonus-copy"></small>
+        </div>
+
+        <div class="final-stats">
+          <div><small>Money left</small><strong id="final-budget">£0</strong></div>
+          <div><small>Energy left</small><strong id="final-energy">0 / 6</strong></div>
+          <div><small>Smart moves</small><strong id="final-moves">0</strong></div>
+        </div>
+
+        <div class="achievement-list" id="achievement-list" aria-label="Achievements"></div>
+
+        <div class="end-actions">
+          <button class="primary-button" id="restart-button" type="button">Play another week</button>
+          <a class="secondary-link" href="index.html">Back to Students Map UK</a>
+        </div>
+        <p class="shortcut-hint">Press <kbd>R</kbd> to play again.</p>
+      </section>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>A light-hearted mini-game—not financial advice. No game data leaves your browser.</p>
+  </footer>
+
+  <noscript><div class="noscript">This mini-game needs JavaScript. You can still <a href="index.html">return to Students Map UK</a>.</div></noscript>
+</body>
+</html>

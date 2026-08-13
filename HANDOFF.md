@@ -1,301 +1,282 @@
-# CrimeMap UK — Engineering & Product Handoff
+# Students Map UK — Engineering and Product Handoff
 
-**Purpose of this file:** everything a new coding agent (Codex/ChatGPT, or a human dev)
-needs to fully understand, run, extend, and deploy this project with **no missing context**.
-Read this file first, then `CLAUDE.md` (the original product brief) and `pipeline/SOURCES.md`
-(verified data endpoints). Nothing else is required.
+Last updated: 14 August 2026.
 
-- **Live site:** https://sarthk.github.io/crimemap-uk/
-- **Repo:** https://github.com/sarthk/crimemap-uk (branch `main`; every push auto-deploys)
-- **Owner:** Sarthak (GitHub `sarthk`)
-- **Status:** England & Wales shipped and live. National crime + price + yield + a
-  "Find areas" filter, all as separate transparent layers.
+Read this file first, then `README.md`. `CLAUDE.md`, `pipeline/` and `web/data/` belong to
+the repository's former CrimeMap product and are not the current public contract.
 
----
+## 1. Current product contract
 
-## 1. What it is (and the rules it lives by)
+Students Map UK is a static, student-first map of useful places around an active UK
+postcode with usable coordinates. It is intended to help someone new to an area discover
+mapped services and venues without creating an account.
 
-A calm, honest web map of **reported crime per resident**, by 2021 LSOA (Lower-layer
-Super Output Area, ~1,500 residents each), for **England & Wales** (~35,672 LSOAs), now
-extended into an **area-intelligence tool for buyers & investors** (adds median house
-price, gross rental yield, and a criteria filter). It answers both "what's this area
-like?" and "find me areas that are X."
+The product can answer:
 
-**Non-negotiable principles (the product IS these — do not violate them):**
-1. **Per-capita, never raw counts.** Raw counts map footfall, not resident risk.
-2. **Show count + rate + population together.** The denominator is part of the truth.
-3. **Handle the low-residential / footfall trap.** City-centre LSOAs have a per-capita
-   rate inflated by non-resident footfall. These are **greyed, not painted red**, with
-   the real figure + a caveat in the panel. (See §7 for exactly how.)
-4. **Label everything "reported crime."** It's reported + anonymised + geocoded-to-nearest-
-   point + ~1–2 month lagged + monthly. A methodology section is mandatory.
-5. **Descriptive, never editorialising. No causal claims.** Numbers + caveats; user concludes.
-6. **Separate, transparent layers — NEVER a blended "neighbourhood score."** Crime, price,
-   yield stay distinct; the user sets thresholds. A black-box score is the one thing that
-   would destroy the trust moat. Money flows *around* the data (referral links), never *into*
-   it (no pay-to-rank).
-7. **Attribute sources (all Open Government Licence v3).**
+> Which selected OpenStreetMap places were returned within this radius, and how far are
+> they in a straight line from the postcode coordinate?
 
----
+It cannot answer:
 
-## 2. Architecture (one sentence)
+> Is every place listed? Is it open now, verified, affordable, discounted, recommended,
+> safe, available or within a particular walking time?
 
-**A Python pipeline turns free open data into three static files, which a single
-self-contained HTML page renders with MapLibre GL + PMTiles, served by GitHub Pages —
-no backend, no database, no build step.**
+Non-negotiable rules:
 
+1. Say **loaded from OpenStreetMap when you searched**, not “live business availability.”
+2. A missing result never proves that a place does not exist.
+3. Distance is straight-line from a postcode coordinate, never a walking distance.
+4. Do not claim results are verified, ranked, reviewed, student-approved or complete.
+5. Show OpenStreetMap attribution wherever its map/place data is presented.
+6. Keep postcode, location and third-party request behaviour visible before search.
+7. Treat every OpenStreetMap tag as untrusted community-supplied content.
+8. Separate public-app work from the retained crime pipeline and artifacts.
+
+## 2. Current user experience
+
+The entry page is `web/index.html`. A visitor can:
+
+- enter a full UK postcode or approve browser geolocation;
+- try example postcodes for Leeds, London, Edinburgh or Cardiff;
+- choose a 600 m, 1.2 km or 2 km radius;
+- view clustered markers and the corresponding accessible result list;
+- filter by category or free text;
+- sort nearest-first or A–Z;
+- save places to an in-memory **My list**;
+- ask **Pick for me** to select randomly from the current filtered set;
+- inspect tagged address, hours, access, wheelchair, fee and cuisine fields when present;
+- open an OpenStreetMap route, exact OSM object or validated website URL;
+- read the data, privacy, scope and safety explanation in a modal;
+- open the independent Freshers Week mini-game.
+
+The result list initially renders 40 cards and can progressively show more. The browser
+keeps at most the nearest 1,200 deduplicated results returned for a search.
+
+## 3. Public architecture
+
+```text
+full postcode ──GET──▶ postcodes.io
+                           │ latitude/longitude
+                           ▼
+                    Overpass QL request
+                           │ OSM nodes/ways/relations
+                           ▼
+                 normalise + deduplicate + sort
+                           │
+                    MapLibre GeoJSON source
+                           │
+                 clustered map + result list
 ```
-open data ──(pipeline/*.py)──▶  web/data/national.pmtiles       (vector tiles: scalar stats per LSOA)
-                                web/data/national-details.json  (per-LSOA breakdown, lazy-loaded on click)
-                                web/data/national-filter.json   (compact table powering the filter)
-                                        │
-                                        ▼
-                            web/index.html  (MapLibre GL + PMTiles, all CSS+JS inlined)
-                                        │
-                        .github/workflows/deploy.yml → GitHub Pages
-```
 
-"Live tracker" = re-run the pipeline monthly, commit the refreshed `web/data/*`, push →
-auto-redeploys. Crime data is monthly, so a monthly refresh *is* real-time here. **Do not
-build streaming or a backend.**
+There is no application server, database, account system, bundler or compile step.
 
----
+Runtime third parties:
 
-## 3. Repository layout (every file)
+- `https://api.postcodes.io/postcodes` — postcode lookup and reverse lookup;
+- public Overpass interpreters, attempted sequentially in `OVERPASS_ENDPOINTS`;
+- MapLibre GL JS from unpkg;
+- CARTO raster basemap tiles containing OpenStreetMap-derived data;
+- OpenStreetMap pages for exact objects and optional walking-route links.
 
-```
-CLAUDE.md                    Original product brief (Phase-1 spec + principles). Read it.
-README.md                    Short overview + run/deploy + status checklist.
-HANDOFF.md                   ← this file.
-serve.py                     Range-capable local static server. USE THIS locally, not
-                             `python -m http.server` (PMTiles needs HTTP Range → plain
-                             http.server returns 200 full-file and the map won't load).
-.github/workflows/deploy.yml GitHub Pages deploy: uploads web/ as the Pages artifact.
-.gitignore                   Ignores pipeline/data/{raw,interim}; keeps web/data/.
-pipeline/
-  config.py                  SINGLE SOURCE OF TRUTH: every URL, path, threshold, bundle,
-                             column name, region definition. Change knobs here.
-  download.py                Downloads all inputs. CLI flags below (§6).
-  build_national.py          THE national build: aggregate crime → join pop/price/rent →
-                             compute rate/percentile/flags/yield → write the 3 web/data files
-                             (runs tippecanoe for the .pmtiles). This is the main script.
-  SOURCES.md                 Verified data endpoints + gotchas (recon-checked). Authoritative.
-  requirements.txt           pandas, requests, remotezip, xlrd, openpyxl (+ numpy via pandas).
-  build_geojson.py           LEGACY Phase-1 West-Yorkshire-only build (Leaflet + GeoJSON).
-  step1_sanity.py            LEGACY Phase-1 sanity check. Both legacy files are UNUSED/UNSERVED
-                             (kept for history). The live product is national only.
-  data/raw/  data/interim/   Downloaded + intermediate data (gitignored, regenerable).
+If all Overpass endpoints fail, the app explicitly says that search is busy. It must not
+render that failure as “no places found.”
+
+## 4. Repository map
+
+```text
+README.md                         concise current-product guide
+HANDOFF.md                        this authoritative handoff
+serve.py                          static local preview server
+.github/workflows/deploy.yml      deploys web/ to GitHub Pages
+
 web/
-  index.html                 THE APP. Self-contained (inline CSS + JS). MapLibre GL 5.24 +
-                             pmtiles 4.4 from unpkg CDN. ~1000 lines.
-  data/national.pmtiles      ~51 MB vector tiles (zoom 4–12). Scalar stats per LSOA (§5).
-  data/national-details.json ~6 MB. Per-LSOA category breakdown + 12-mo series + price + yield.
-  data/national-filter.json  ~1.9 MB. Compact [code,name,crime_pctl,price,yield] rows for filter.
+  index.html                      Students Map semantic shell and policy copy
+  styles.css                      responsive application styles
+  app.js                          postcode, Overpass, map, cards and in-tab state
+  favicon.svg                     local application icon
+  game.html                       Freshers Week game shell
+  game.css                        game-specific styles
+  game.js                         game scenarios, scoring and keyboard interactions
+
+CLAUDE.md                         historical CrimeMap brief
+pipeline/                         retained CrimeMap ingestion/build/validation code
+web/data/                         retained CrimeMap PMTiles and JSON artifacts
 ```
 
----
+`web/app.js` does not import, fetch or otherwise read `web/data/`. The current deployment
+workflow still runs legacy pipeline tests/data validation and uploads those artifacts;
+this is repository compatibility overhead, not a Students Map dependency.
 
-## 4. Environment & dependencies
+## 5. Postcode and place-query contract
 
-- **Python 3.11+** (developed on 3.14). `pip install -r pipeline/requirements.txt`.
-- **tippecanoe** (Felt fork, v2.80.0) — required ONLY to (re)generate `national.pmtiles`.
-  Not on PATH by default; no Homebrew was used. Build from source:
-  `git clone --depth 1 https://github.com/felt/tippecanoe && cd tippecanoe && make -j4`.
-  `build_national.py` finds it via, in order: `$CRIMEMAP_TIPPECANOE`, `which tippecanoe`,
-  `~/.local/bin/tippecanoe`. Set `CRIMEMAP_TIPPECANOE=/path/to/tippecanoe` if elsewhere.
-- **No Node/npm needed.** MapLibre + PMTiles load from a CDN like Leaflet; there is no bundler.
-- **Disk:** the crime archive path uses ~1–2 GB temporarily; keep a few GB free.
+`usePostcode()` normalises the entered value, calls postcodes.io and requires numeric
+coordinates within the application's UK bounding box. Postcode quality `9` is rejected;
+quality `5` or worse produces an approximate-centre message.
 
----
+`useCurrentLocation()` requests browser permission, reverse-lookups the nearest postcode
+and uses the browser coordinate as the search centre. No lookup happens before an
+explicit search, example-button click or location action.
 
-## 5. Data model (schemas — exact)
+The permitted radii are hard-coded to 600, 1,200 and 2,000 metres. `makeOverpassQuery()`
+constructs one allow-listed regular-expression selector from the fixed
+`OVERPASS_KEY_PATTERN` and `OVERPASS_VALUE_PATTERN` constants and produces:
 
-**`national.pmtiles`** — vector tiles, tippecanoe layer name = **`lsoa`** (this is the
-MapLibre `source-layer`; a wrong name = silent blank map). Per-feature properties:
-- `lsoa21cd` (str), `lsoa21nm` (str), `pop` (int|null), `low_pop_flag` (bool)
-- `price` (int|null £), `price_pctl` (0..1|null), `yield` (float %|null), `yield_pctl` (0..1|null)
-- per crime-type bundle **code** in {`res`, `foot`, `all`}:
-  - `t_<code>` total crimes (int), `r_<code>` rate per 1,000 (float|null),
-    `p_<code>` percentile 0..1 (float|null), `h_<code>` high-rate flag (bool)
-
-**`national-details.json`** (fetched once, lazily, on first area click):
-```json
-{ "categories": [14 crime-type strings, sorted],
-  "months": ["2025-05", …, "2026-04"],
-  "default_bundle": "residential_risk",
-  "bundles": { "residential_risk": [...], "footfall_heavy": [...], "all": [...] },
-  "window_months": 12, "low_pop_threshold": 500,
-  "price_label": "ONS · median sold price · year to Mar 2023",
-  "rent_label": "Gross yield (est.) · ONS mean rent (LA) ÷ ONS median price",
-  "lsoa": { "E01…": { "c": [14 ints in `categories` order],
-                       "m": [12 ints in `months` order, residential-risk bundle],
-                       "price": int|null, "price_pctl": float|null,
-                       "yield": float|null, "yield_pctl": float|null }, … } }
+```overpass
+[out:json][timeout:25];
+nwr(around:RADIUS,LATITUDE,LONGITUDE)[~"ALLOWED_KEYS"~"ALLOWED_VALUES"];
+out center qt;
 ```
 
-**`national-filter.json`** (fetched when the filter is first used):
-```json
-{ "fields": ["code","name","crime_pctl_res","price","yield"], "count": 35672,
-  "rows": [ ["E01…","Leeds 111E", 0.999, 190000, 7.2], … ] }   // nulls allowed per cell
-```
+Important rules:
 
-**The metric.** `rate_per_1000 = crimes_in_bundle_over_12mo / resident_population × 1000`,
-rolling 12 months. `percentile` = rank of the rate among **non-low-pop** LSOAs (national).
-`low_pop_flag` = `pop < 500` (in practice never true — 2021 LSOAs have a ~1,000 floor).
-`high_rate_flag` = rate above the 99th percentile of non-low-pop rates (empirically the
-town/city centres — the footfall cases). Yield = `mean_monthly_rent(LAD) × 12 / median_price(LSOA) × 100`.
+- Never interpolate raw postcode or free-text filter input into Overpass QL.
+- Keep radius and coordinate allow-list validation.
+- Nodes use `lat`/`lon`; ways and relations use `center.lat`/`center.lon`.
+- A returned way/relation centre is its bounding-box centre and may not be an entrance.
+- Abort superseded requests and keep the current sequential endpoint fallback.
+- Cache identical coordinate/radius results in memory only.
+- Deduplicate by OSM object ID and a secondary normalised name/location key.
+- Do not query automatically when the map pans.
 
-**Crime-type bundles** (police.uk categories): `residential_risk` (default) = Burglary,
-Robbery, Violence and sexual offences, Vehicle crime, Criminal damage and arson, Theft from
-the person. `footfall_heavy` = Shoplifting, Anti-social behaviour, Public order, Other theft,
-Drugs. `all` = every category. Bundle is a user choice; the UI says so.
+## 6. Public categories
 
----
+The default **Everything** view includes all returned selectors. Public categories are:
 
-## 6. The pipeline — how to (re)build from scratch
+- **Study & supplies** — universities, colleges, libraries, selected schools, books,
+  stationery, copy shops and coworking;
+- **Food & coffee** — cafés, restaurants, fast food, food courts and ice cream;
+- **Groceries** — supermarkets, convenience shops, food specialists and bakeries;
+- **Health** — pharmacies, doctors, dentists, clinics, hospitals and selected healthcare;
+- **Fitness & outdoors** — fitness/sports facilities, parks, pitches, tracks and climbing;
+- **Transport** — stations, selected rail/public-transport features, bike facilities,
+  car sharing, charging and fuel;
+- **Shops & errands** — banking, post/parcel services, toilets, water, recycling and
+  selected practical shops;
+- **Personal care** — hairdressers, beauty/cosmetics, chemists and opticians;
+- **Social & culture** — pubs/bars, cinemas, theatres, arts/community venues, museums,
+  galleries and selected leisure attractions;
+- **Housing help** — university residential features, estate agents and hostels returned
+  by the fixed query selectors.
 
-All data sources are free, OGL v3, verified live (exact URLs + parsing recipes in
-`pipeline/SOURCES.md` and hard-coded in `pipeline/config.py`). Full refresh:
+These are application-defined discovery groupings, not official classifications or
+recommendations. A place can match several categories but receives one deterministic
+primary category for its marker and card.
+
+## 7. Browser state and data safety
+
+Core in-memory state includes the current search context, loaded places, category/text
+filter, sort mode, selected place, `savedIds`, visible-card limit and query cache. There
+is no localStorage, sessionStorage, cookie or server-side persistence.
+
+OpenStreetMap names, operators, addresses, hours and other tags are untrusted input:
+
+- interpolate only through `escapeHtml()` or assign with `textContent`;
+- accept external venue URLs only through `safeHttpUrl()` and only for HTTP(S);
+- keep OSM object type/ID and coordinates numeric before building links/features;
+- never inject raw tags into an event handler, style expression or Overpass selector;
+- retain `rel="noopener"` on new-tab links.
+
+## 8. Honest copy, privacy and attribution
+
+“Live” in marketing copy means an on-demand request to a recent OpenStreetMap database
+snapshot. It must never mean live opening, capacity, stock, accommodation or service
+availability. Raw `opening_hours` is displayed only as community-listed information and
+should not be converted into a confident “open now” badge without a separately tested
+parser and stronger caveats.
+
+The UI must disclose that:
+
+- a postcode goes to postcodes.io;
+- its coordinate, or a browser-approved coordinate, goes to one Overpass operator at a
+  time;
+- these providers and the basemap host receive ordinary request metadata such as IP
+  address and referrer;
+- the site itself does not store searches, saved places or game results;
+- OSM coverage and details can be incomplete or stale;
+- important information should be checked with the venue;
+- the discovery map works around active UK postcodes with usable coordinates, but does
+  not guarantee universal map coverage.
+
+Visible attribution:
+
+> Places and map data © OpenStreetMap contributors, ODbL. Postcodes by postcodes.io.
+> Basemap © CARTO and OpenStreetMap contributors.
+
+Do not add claims about student discounts, prices, reviews, safety, neighbourhood
+quality, medical suitability or accommodation verification without a new validated
+source and explicit methodology.
+
+## 9. Freshers Week mini-game
+
+`web/game.html`, `game.css` and `game.js` form an independent static experience. It has
+seven fixed scenarios, begins with a £45 fictional budget and four energy, and calculates
+Freshers Points, a result label and achievements locally. It supports buttons, number
+keys and arrow-key choice navigation.
+
+The game has no purchases, prizes, chance rewards, sign-in, saved scores or network
+requests. Keep its fictional scoring clearly separate from real financial guidance.
+
+## 10. Local development and release checks
+
+Run:
 
 ```bash
-pip install -r pipeline/requirements.txt
-python pipeline/download.py --national     # all 43 forces, rolling 12 mo crime (auto-detects latest month)
-python pipeline/download.py --population    # ONS Census 2021 TS001 (once)
-python pipeline/download.py --price         # ONS HPSSA median price by LSOA (.xls in a zip)
-python pipeline/download.py --rent          # ONS PIPR rent (.xlsx) + ONS LSOA21→LAD22 lookup (.csv)
-#   (or:  python pipeline/download.py --national --all   to grab crime + population + price + rent)
-python pipeline/build_national.py           # → web/data/{national.pmtiles, national-details.json, national-filter.json}
-python serve.py 8000                         # Range-capable server; open http://localhost:8000
+python serve.py 8000
 ```
 
-**`download.py` flags:** `--national` (all E&W forces; else West-Yorkshire only, legacy),
-`--archive` (crime via full 1.6 GB archive instead of range extraction), `--custom` (police.uk
-custom POST download — slow, avoid), `--keep-archive`, `--population`, `--price`, `--rent`,
-`--all`.
+Open `http://127.0.0.1:8000`; an internet connection is required for map libraries,
+tiles, postcode lookup and places.
 
-**`build_national.py` flags:** `--refresh-boundaries` (re-fetch the 35k LSOA boundaries from
-ArcGIS instead of the cache), `--skip-tiles` (regenerate the JSON files but not the .pmtiles —
-fast; use when only price/rent/details changed and geometry hasn't).
+Before deploying the Students Map frontend:
 
-**Data sources & the ONE gotcha per source** (details in SOURCES.md):
-- **Crime — police.uk archive** (`data.police.uk/data/archive/<YYYY-MM>.zip` → S3). NO
-  per-force CSV URLs exist; CSVs ship only inside the zip. We range-extract just the WY files,
-  or (national) download the whole archive. LSOA codes are **2021 vintage**. Each crime is
-  pre-tagged with its LSOA code → **no spatial join, just `groupby`**.
-- **Boundaries — ONS ArcGIS** "LSOA (Dec 2021) Boundaries EW BGC V5", FeatureServer, paginate
-  `resultOffset` by 2000 (maxRecordCount). Fields `LSOA21CD`/`LSOA21NM`. `f=geojson`, `outSR=4326`.
-- **Population — ONS Census 2021 TS001** (Nomis zip → `census2021-ts001-lsoa.csv`). Key col
-  `geography code`, value col `Residence type: Total; measures: Value`. 2021 vintage. **100% join.**
-- **Price — ONS HPSSA Dataset 46** (median price by LSOA, .xls in a zip; sheet `1a`, header
-  row 6, `xlrd`). ⚠️ **2011-LSOA keyed, ends year-to-Mar-2023** (final release). We join by
-  direct 2011↔2021 code match = **~92%** of LSOAs; the rest show "not published."
-- **Rent — ONS PIPR** monthly price stats (.xlsx, sheet `Table 1`, header row 3, `openpyxl`).
-  ⚠️ **MEAN (not median) rent, by local authority only.** Join to LSOAs by **LAD code** (name-
-  join fails: "Bristol" ≠ "Bristol, City of") via the **ONS LSOA21→LAD22 lookup CSV**. ~88% yield.
-- **Postcodes — postcodes.io** `GET /postcodes/{pc}` → use `result.codes.lsoa21` (not the
-  generic `.lsoa`). Bulk/reverse endpoints exist.
+```bash
+node --check web/app.js
+node --check web/game.js
+python -m compileall -q serve.py
+git diff --check
+```
 
----
+Manual smoke checks:
 
-## 7. The frontend (`web/index.html`)
+1. Search each example postcode and an invalid postcode.
+2. Test 600 m, 1.2 km and 2 km queries.
+3. Test endpoint failure/retry separately from a genuine empty result.
+4. Test category, text, sort, My list, Pick for me and progressive loading.
+5. Inspect an unnamed place, a way/relation and a place with a hostile-looking tag value.
+6. Verify selected markers, clusters, external URLs and visible OSM attribution.
+7. Test location denial and success without implying that location is stored.
+8. Preview desktop, narrow mobile, keyboard-only and reduced-motion behaviour.
+9. Complete and replay the mini-game with keyboard and touch.
 
-One self-contained file. MapLibre GL JS 5.24 + pmtiles 4.4 (CDN), inline CSS + JS. Key pieces:
+A push to `main` deploys `web/` through GitHub Pages. The current workflow additionally
+runs legacy crime-pipeline validation; failures there do not necessarily indicate a
+Students Map frontend defect.
 
-- **Map:** Carto Positron raster basemap + a vector `national` source (`pmtiles://./data/national.pmtiles`).
-  Layers: `fill` (choropleth), `matchline` (bold outline for filter matches), `caution` (dashed
-  outline on high-rate areas), `sel` (thick outline on the selected/searched area).
-- **Choropleth colour** (`fillPaint(code)`): colourblind-safe ColorBrewer **YlOrRd** by
-  `p_<bundle>` percentile. **Flagged areas (`low_pop_flag` OR `h_<bundle>`) are greyed**, not
-  ramped — implementing principle #3. The real figures live in the panel.
-- **Crime-type bundles** (`res`/`foot`/`all`): segmented control; `setBundle()` swaps
-  `fill-color` to `fillPaint(code)` and re-applies the filter state.
-- **Hover:** MapLibre popup showing `lsoa21nm` + `lsoa21cd`.
-- **Click / postcode search / "Use my location" / URL hash** all call `select(code, props)`
-  → `showPanel()` and set `location.hash = #<lsoa21cd>` (shareable deep-links; `goToCode()`
-  handles inbound hashes). Postcode + reverse-geocode via postcodes.io.
-- **Panel (`showPanel`)**: rate, count, population, percentile "standing", plain-language
-  reading, direction-over-time trend (from `m[]`), category breakdown bars, price + yield
-  (from details), a disclosed **affiliate** link-out, and "Copy link".
-- **Top "Find areas" filter bar** (`#filterbar`): Crime (max percentile) / Max price / Min
-  yield / Sort selects. `applyFilter()` reads `national-filter.json`, filters + sorts, renders
-  the ranked "Matching areas" list in the sidebar, and highlights matches on the map by
-  painting `fill` solid indigo `#4338ca` + `matchline`. Clearing restores the crime choropleth.
-- **Visitor counter** (`initVisits`): cookie-free, deduped per browser/day via abacus; upgrade
-  to real unique visitors by setting `VISITS.goatcounter`.
+## 11. Legacy CrimeMap boundary
 
-**Config knobs at the top of the inline `<script>`:**
-- `AFFILIATE = { mortgage, conveyancer, survey }` — set referral URLs (empty = inert link).
-- `VISITS = { goatcounter, ns, key }` — set a goatcounter.com site code for true uniques.
+This repository originally generated an England-and-Wales crime-rate map. The following
+remain for history and possible extraction:
 
-**Local-render gotcha:** the map fetches PMTiles tiles via HTTP **Range**. `serve.py` supports
-it; `python -m http.server` does NOT (and the map silently never loads). GitHub Pages supports
-Range, so production is fine. (During development the Claude preview's MapLibre renderer
-sometimes wedged after many reloads — an environment quirk, not a code bug; the live site
-renders correctly.)
+- `pipeline/` and its tests;
+- `pipeline/SOURCES.md`;
+- `web/data/national.pmtiles` and the national JSON artifacts;
+- `CLAUDE.md` and crime-specific parts of the deployment validation;
+- Range support in `serve.py`.
 
----
+Do not restore crime, house-price, yield, affiliate or neighbourhood-ranking UI to
+Students Map UK. Do not describe a crime-data rebuild as part of the normal student-app
+release. If CrimeMap is revived, move it to a separate route or repository with its own
+product contract, data-quality status and deployment checks.
 
-## 8. Deploy
+## 12. Highest-priority next work
 
-`.github/workflows/deploy.yml` uploads `web/` to GitHub Pages on every push to `main`
-(Pages "Source: GitHub Actions"). The committed `web/data/*` files ARE the served data —
-there is no build step in CI. To publish a data refresh: re-run the pipeline, commit
-`web/data/*`, push.
-
-**Custom domain (planned — e.g. `vicinia.uk`):** buy it → DNS: apex A-records to GitHub Pages
-`185.199.108–111.153`, `www` CNAME → `sarthk.github.io` → repo Settings ▸ Pages ▸ Custom domain
-→ add a `web/CNAME` file with the domain → enable Enforce HTTPS. (If rebranding, the in-page
-brand string is "CrimeMap UK" in `web/index.html` header — change title/logo there.)
-
-**Note on repo weight:** `national.pmtiles` (~51 MB) is committed so Pages serves it with no
-build step; each monthly refresh re-commits it, growing git history. Fine for now; if it
-becomes a problem, move tile generation into the Actions workflow (install tippecanoe in CI)
-or use Git LFS.
-
----
-
-## 9. Key design decisions & rationale (so you don't "fix" them)
-
-- **Greyed footfall centres, not red.** A city-centre per-capita rate is inflated by visitors;
-  painting it max-red would mislead exactly like raw counts did, inverted. So flagged areas are
-  greyed on the map with the real number + caveat in the panel — *flagged, not hidden.*
-- **No blended score.** Crime/price/yield are separate toggleable layers + a filter with user-set
-  thresholds. This transparency is the moat vs. incumbents (UKCrimeStats/PropertyData).
-- **PMTiles + MapLibre, not raw GeoJSON.** 35k polygons can't load as GeoJSON; tiles fetch only
-  what's in view via Range. Tiles carry only scalars; heavy per-LSOA detail is lazy-loaded.
-- **Yield is labelled an estimate.** Rent is LA-level + mean + 2026 over 2023 price. It's a
-  relative guide, not a guaranteed return.
-
-## 10. Known limitations (call these out; don't silently ship over them)
-
-1. **Yield is overstated for the cheapest LSOAs** — LA-average rent over a very low local
-   price yields implausible figures (e.g. 17%). **Recommended next fix:** flag/dim yields above
-   ~12% as "LA-average rent over a low local price — likely overstated."
-2. **Price is stale (to Mar 2023) and 2011-LSOA-joined (~92%).** Fresher/2021-native would mean
-   computing medians from HM Land Registry `pp-complete.csv` (~5.5 GB) + a postcode→2021-LSOA
-   lookup — deferred.
-3. **No true year-over-year trend yet** — only 12 months are ingested; the panel shows a
-   within-window 6-vs-6-month direction. True YoY needs a 24-month crime window (pipeline change).
-4. **England & Wales only.** Scotland (Data Zones, different source/resolution) and Northern
-   Ireland (NISRA) are separate systems — real work, deferred.
-5. **No real analytics yet** — the visitor counter is a lightweight tally. Wire GoatCounter.
-
-## 11. Roadmap (advisor-endorsed order)
-
-Get real users first (put the live URL in front of 3–5 buyers/investors) → extreme-yield flag
-→ amenities/commute-time (DfE schools, NaPTAN/OSM transport, all free) → 24-month window for
-YoY → custom domain + optional rebrand to **Vicinia** → later Scotland/NI. The strategic arc:
-crime is the trust wedge; price→yield→amenities make it a buying tool; revenue = referrals + B2B.
-
----
-
-## 12. Kick-off prompt to paste into Codex
-
-> Clone https://github.com/sarthk/crimemap-uk and read `HANDOFF.md` in full, then `CLAUDE.md`
-> and `pipeline/SOURCES.md`. It's a static England & Wales crime/price/yield map: a Python
-> pipeline (`pipeline/`) generates three files in `web/data/` that `web/index.html` (MapLibre
-> GL + PMTiles, self-contained) renders, deployed to GitHub Pages. No backend. Preserve the
-> non-negotiable principles in HANDOFF §1 (esp. per-capita, greyed footfall centres, and NO
-> blended score). To run locally: `pip install -r pipeline/requirements.txt`, then serve with
-> `python serve.py 8000` (NOT `http.server` — PMTiles needs HTTP Range). To rebuild data you
-> also need tippecanoe (see HANDOFF §4). My first task is: <state your task>.
+1. Add automated browser smoke tests for postcode success/error, Overpass failure,
+   filtering, mobile layout and the mini-game.
+2. Separate the legacy crime validation/artifacts from the Students Map deployment to
+   reduce repository and Pages payload weight.
+3. Add a first-party cache/proxy or managed POI provider before meaningful traffic;
+   public Overpass instances are shared and best-effort.
+4. Add a Content Security Policy after enumerating the required postcode, Overpass,
+   unpkg, CARTO and OpenStreetMap origins.
+5. Decide on and add a software licence; OpenStreetMap's ODbL attribution does not license
+   this repository's application code.

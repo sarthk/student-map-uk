@@ -1,14 +1,16 @@
 """Download the inputs the pipeline needs.
 
-Crime (default) — West Yorkshire street CSVs for the rolling 12-month window.
+Crime (default) — West Yorkshire street CSVs for the rolling 12-month window;
+pass ``--national`` for the England and Wales build used by the public app.
 There are NO per-force-per-month CSV URLs on police.uk; CSVs only ship inside a
 zip. Three routes (recon-verified 2026-06):
 
   REMOTE (DEFAULT): the national archive https://data.police.uk/data/archive/
       <latest>.zip (302 → S3) is ~1.6 GB, but a ZIP's central directory is at the
       END, and S3 honours HTTP Range. So we read just the directory, then fetch
-      ONLY the ~12 WY street entries (~65 MB) via range requests. Seconds, not the
-      ~50 min a full 1.6 GB GET takes. Implemented with `remotezip`.
+      ONLY the requested street entries via range requests instead of the full
+      archive. For ``--national`` this is roughly 500 files. Implemented with
+      `remotezip`.
 
   --archive: stream the WHOLE 1.6 GB archive to disk (resumable on stall), then
       extract the WY files. Fallback if range requests are ever blocked.
@@ -24,9 +26,11 @@ Population (--population) — ONS Census 2021 TS001 usual-resident population at
     python pipeline/download.py --archive         # crime, full 1.6 GB download (resumable)
     python pipeline/download.py --custom          # crime, custom POST download (slow)
     python pipeline/download.py --population        # TS001 population only
-    python pipeline/download.py --all               # crime (REMOTE) + population
+    python pipeline/download.py --national           # public app crime window
+    python pipeline/download.py --population         # Census population only
+    python pipeline/download.py --all                # crime + population + legacy property inputs
 
-Boundaries are fetched in build_geojson.py (need geopandas + the WY LSOA set).
+National boundaries are fetched and cached by build_national.py.
 """
 
 from __future__ import annotations
@@ -42,6 +46,8 @@ import requests
 from remotezip import RemoteZip
 
 import config
+from crime_quality import (CrimeDataQualityError, discover_street_files,
+                           quality_metadata, trailing_months, write_manifest)
 
 UA = {"User-Agent": "crimemap-uk/0.1 (+https://github.com/; OGL v3 data)"}
 DATA_BASE = "https://data.police.uk/data/"
@@ -65,14 +71,7 @@ def latest_available_month() -> str:
 
 def window_months(latest: str, n: int = config.WINDOW_MONTHS) -> list[str]:
     """The n trailing 'YYYY-MM' strings ending at `latest`, inclusive."""
-    y, m = (int(x) for x in latest.split("-"))
-    out = []
-    for _ in range(n):
-        out.append(f"{y:04d}-{m:02d}")
-        m -= 1
-        if m == 0:
-            y, m = y - 1, 12
-    return sorted(out)
+    return trailing_months(latest, n)
 
 
 def _resolve_archive_url(latest: str) -> tuple[str, int]:
@@ -173,7 +172,8 @@ def _zip_is_ready(resp: requests.Response) -> bytes | None:
     return None
 
 
-def download_crime_route_b(months: list[str], poll_secs: int = 8, timeout_secs: int = 2400) -> Path:
+def download_crime_route_b(months: list[str], poll_secs: int = 8, timeout_secs: int = 2400,
+                           force: str = config.FORCE_ID) -> Path:
     s = requests.Session()
     s.headers.update(UA)
     form = s.get(DATA_BASE, timeout=30)
@@ -185,9 +185,9 @@ def download_crime_route_b(months: list[str], poll_secs: int = 8, timeout_secs: 
         "csrfmiddlewaretoken": m.group(1),
         "date_from": months[0],
         "date_to": months[-1],
-        "forces": config.FORCE_ID,
+        "forces": force,
         "include_crime": "on",
-        "description": f"crimemap-uk {config.FORCE_ID} street {months[0]}..{months[-1]}",
+        "description": f"crimemap-uk {force} street {months[0]}..{months[-1]}",
     }
     posted = s.post(DATA_BASE, data=payload, headers={"Referer": DATA_BASE},
                     timeout=60, allow_redirects=False)
@@ -246,6 +246,8 @@ def extract_street(zip_path: Path, months: set[str], force: str | None = config.
 
 
 def download_crime(method: str, keep_archive: bool, force: str | None = config.FORCE_ID) -> None:
+    if method == "custom" and force is None:
+        raise ValueError("the custom-download route supports one force only; use remote or archive nationally")
     latest = latest_available_month()
     months = window_months(latest)
     scope = force if force else "ALL forces (national)"
@@ -253,16 +255,44 @@ def download_crime(method: str, keep_archive: bool, force: str | None = config.F
     if method == "remote":
         written = download_crime_remote(latest, months, force)
     else:
-        zip_path = (download_crime_route_b(months) if method == "custom"
+        zip_path = (download_crime_route_b(months, force=force) if method == "custom"
                     else download_crime_route_a(latest))
         written = extract_street(zip_path, set(months), force)
         if not keep_archive and zip_path.name.startswith("_police-"):
             zip_path.unlink(missing_ok=True)
             _log(f"  removed staging archive {zip_path.name}")
     _log(f"Extracted {len(written)} street CSV(s) into {config.RAW_DIR}")
-    missing = sorted(set(months) - {w.split('/')[0] for w in written})
-    if missing:
-        _log(f"  NOTE: no street file for {missing} (submission gap?).")
+
+    # Audit the raw files on disk, not just this call's return value: a retry may
+    # legitimately reuse force-months written by an earlier interrupted attempt.
+    discovered = discover_street_files(config.RAW_DIR)
+    scope_files = [item for item in discovered
+                   if item.month in set(months) and (force is None or item.force == force)]
+    expected_forces = config.ENGLAND_WALES_FORCES if force is None else (force,)
+    quality = quality_metadata(scope_files, months, expected_forces)
+    quality.update({"source_latest_month": latest, "download_method": method,
+                    "scope": "national" if force is None else force})
+    write_manifest(config.CRIME_COVERAGE_MANIFEST, quality)
+
+    observed_months = {item.month for item in scope_files}
+    missing_months = [month for month in months if month not in observed_months]
+    if missing_months:
+        raise CrimeDataQualityError(
+            f"download cannot supply the exact {len(months)}-month window; "
+            f"no street files for: {', '.join(missing_months)}"
+        )
+    coverage = quality["coverage"]
+    if coverage["coverage_ratio"] < config.MIN_FORCE_MONTH_COVERAGE:
+        raise CrimeDataQualityError(
+            "download appears incomplete: observed "
+            f"{coverage['observed_expected_force_months']}/{coverage['expected_force_months']} "
+            f"expected force-month files ({coverage['coverage_ratio']:.1%}); "
+            f"see {config.CRIME_COVERAGE_MANIFEST}"
+        )
+    if quality["completeness_status"] != "complete":
+        _log("  WARNING: police.uk force submissions are partial: "
+             f"{coverage['observed_expected_force_months']}/{coverage['expected_force_months']} "
+             f"force-months; audit → {config.CRIME_COVERAGE_MANIFEST}")
 
 
 # --- Population ---------------------------------------------------------------

@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-13T19:13:32Z",
+  "geography": "England and Wales",
+  "area_type": "2021 LSOA",
+  "area_count": 35672,
+  "crime_window_start": "2025-07",
+  "crime_window_end": "2026-06",
+  "window_months": 12,
+  "population_vintage": "Census 2021 usual residents",
+  "coverage_status": "partial",
+  "source_file_count": 511,
+  "expected_force_months": 516,
+  "observed_force_months": 499,
+  "missing_force_months": [
+    [
+      "2025-07",
+      "greater-manchester"
+    ],
+    [
+      "2025-08",
+      "greater-manchester"
+    ],
+    [
+      "2025-09",
+      "greater-manchester"
+    ],
+    [
+      "2025-10",
+      "greater-manchester"
+    ],
+    [
+      "2025-11",
+      "greater-manchester"
+    ],
+    [
+      "2025-12",
+      "greater-manchester"
+    ],
+    [
+      "2026-01",
+      "greater-manchester"
+    ],
+    [
+      "2026-02",
+      "gloucestershire"
+    ],
+    [
+      "2026-02",
+      "greater-manchester"
+    ],
+    [
+      "2026-03",
+      "gloucestershire"
+    ],
+    [
+      "2026-03",
+      "greater-manchester"
+    ],
+    [
+      "2026-04",
+      "gloucestershire"
+    ],
+    [
+      "2026-04",
+      "greater-manchester"
+    ],
+    [
+      "2026-05",
+      "gloucestershire"
+    ],
+    [
+      "2026-05",
+      "greater-manchester"
+    ],
+    [
+      "2026-06",
+      "gloucestershire"
+    ],
+    [
+      "2026-06",
+      "greater-manchester"
+    ]
+  ],
+  "forces_with_submission_gaps": [
+    "gloucestershire",
+    "greater-manchester"
+  ],
+  "force_gap_month_counts": {
+    "gloucestershire": 5,
+    "greater-manchester": 12
+  },
+  "unavailable_area_prefixes": [
+    "Bolton",
+    "Bury",
+    "Cheltenham",
+    "Cotswold",
+    "Forest of Dean",
+    "Gloucester",
+    "Manchester",
+    "Oldham",
+    "Rochdale",
+    "Salford",
+    "Stockport",
+    "Stroud",
+    "Tameside",
+    "Tewkesbury",
+    "Trafford",
+    "Wigan"
+  ],
+  "coverage_note": "The build contained 499/516 expected territorial police force-month files; 17 submission gap(s) are recorded (Gloucestershire: 5 missing month(s); Greater Manchester: 12 missing month(s)). Affected areas are withheld. Missing source files must not be interpreted as zero crime."
+}

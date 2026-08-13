@@ -1,109 +1,117 @@
-# CrimeMap UK
+# Students Map UK
 
-A web map of **reported crime in England & Wales, aggregated to LSOA and
-normalised per resident** — so a renter, student, or buyer can judge how safe an
-*area to live in* actually is. It shows the numbers (count + rate + population,
-always together) and lets the user draw their own conclusions. It is a calm
-reference tool, **not** a "crime is exploding" shock piece.
+A static, postcode-first discovery map for students finding useful places around an
+active UK postcode. Search once to load nearby study spaces, food, groceries, health
+services, fitness, transport, everyday errands, personal care, social venues and
+housing-related help from community-maintained OpenStreetMap data.
 
-> **England & Wales** (`index.html`): one MapLibre GL + PMTiles map of ~35k LSOAs —
-> crime (per resident), median price, gross yield, hover tooltips, and a top
-> "Find areas" filter (crime / price / yield, sortable) for buyers & investors.
-> Live at https://sarthk.github.io/crimemap-uk/ · brief in [CLAUDE.md](CLAUDE.md).
+The public application is in `web/`. It has no account system, application backend,
+database, advertising tracker or behavioural analytics.
 
-## Layout
+## What the site does
 
+- Resolves a UK postcode with [postcodes.io](https://postcodes.io/), or uses a browser
+  location after permission.
+- Requests selected nearby map features from a public OpenStreetMap Overpass service.
+- Supports 600 m, 1.2 km and 2 km search radii.
+- Shows clustered map markers and an accessible list sorted by straight-line distance.
+- Filters results by category or name and sorts them by distance or name.
+- Lets a visitor keep a temporary **My list** and choose a random visible result with
+  **Pick for me**.
+- Links to the place on OpenStreetMap, its tagged website when available, and an
+  OpenStreetMap walking-route page.
+- Includes a separate, two-minute **Freshers Week** budget game at `web/game.html`.
+
+At most the nearest 1,200 deduplicated mapped places are retained for one search, and 40
+cards are initially shown. Search results, query caching, saved places and game state all
+remain in memory for the current tab only.
+
+## What the site does not know
+
+“Live” means the app requests the latest available OpenStreetMap database snapshot when
+the visitor searches. It does **not** mean that a business is currently open, operating,
+available or verified.
+
+OpenStreetMap is maintained by contributors, so listings can be missing, duplicated or
+out of date. Distances are straight-line estimates from a postcode coordinate, not
+walking distances or journey times. The site does not claim that results are complete,
+student-approved, affordable, discounted, safe or medically authoritative.
+
+## Runtime architecture
+
+```text
+postcode ──▶ postcodes.io ──▶ latitude/longitude
+                                  │
+                                  ▼
+                         public Overpass API
+                                  │
+                         OpenStreetMap POIs
+                                  │
+                                  ▼
+                 MapLibre map + list in the browser
 ```
-pipeline/   Python: download → aggregate to LSOA → join population → write GeoJSON
-  config.py          metric, category bundles, thresholds, paths (single source of truth)
-  download.py        fetch West Yorkshire street CSVs (rolling 12 months) + boundaries + population
-  step1_sanity.py    load CSVs, confirm `LSOA code` column, print top categories  ← Phase-1 task 1
-  build_geojson.py   compute 12-mo rate + bundles + flags → web/data/west-yorkshire.geojson
-  data/raw/          downloaded zips + extracted CSVs (gitignored)
-  data/interim/      cached boundaries + population (gitignored)
-web/        Static Leaflet site (choropleth + postcode search + LSOA panel + methodology)
-  data/              published west-yorkshire.geojson (committed → served by GitHub Pages)
-```
 
-## The metric
+The frontend is plain HTML, CSS and JavaScript with no build step. MapLibre GL JS loads
+from unpkg; CARTO/OpenStreetMap provide the basemap. Public Overpass services are shared,
+best-effort infrastructure, so the app tries two endpoints in sequence before showing
+an explicit busy state.
 
-`rate_per_1000 = (crimes in LSOA over rolling 12 months / resident population) × 1000`
-
-- **Per-capita, never raw counts** — raw counts map footfall, not resident risk.
-- **Low-residential flag** — LSOAs with population `< ~500` (or extreme outlier
-  rates from a tiny denominator) are greyed, not painted red.
-- **Default bundle = "Residential risk"**; footfall-heavy categories and "All
-  crime" are explicit, labelled toggles.
-
-## Data sources (all free, OGL v3 — attribution required)
-
-| What | Source |
-|------|--------|
-| Crime | [police.uk bulk CSV](https://data.police.uk/data/) |
-| LSOA 2021 boundaries | ONS Open Geography Portal (generalised clipped GeoJSON) |
-| LSOA 2021 population | ONS Census 2021 (TS001 / LSOA estimates) |
-| Postcode → LSOA | [postcodes.io](https://api.postcodes.io) |
-
-**Vintage gotcha:** police.uk now tags crimes with **2021** LSOA codes, so
-boundaries *and* population must also be 2021 vintage or the join fails silently.
-
-## Running the pipeline
+## Local preview
 
 ```bash
-python -m pip install -r pipeline/requirements.txt
-python pipeline/download.py        # → pipeline/data/raw/<YYYY-MM>/...-west-yorkshire-street.csv
-python pipeline/step1_sanity.py    # confirm columns + top categories
-python pipeline/build_geojson.py   # → web/data/west-yorkshire.geojson
+python serve.py 8000
 ```
 
-View the map locally (it's a static site — no build step):
+Open `http://127.0.0.1:8000`. The map and place search require an internet connection.
+
+Useful static checks:
 
 ```bash
-python -m http.server 8000 --directory web   # then open http://localhost:8000
+node --check web/app.js
+node --check web/game.js
+python -m compileall -q serve.py
+git diff --check
 ```
 
-The "live tracker" is a monthly re-run + redeploy — crime data is monthly, so a
-monthly refresh *is* real-time for this domain. No streaming, no backend.
+## Repository map
 
-## Status
+```text
+web/index.html       Students Map application shell and data/privacy explanation
+web/styles.css       responsive map and result-list presentation
+web/app.js           postcode lookup, Overpass query, POI normalisation and UI state
+web/favicon.svg      local application icon
+web/game.html        Freshers Week mini-game shell
+web/game.css         mini-game presentation
+web/game.js          seven-scenario, in-memory budget game
+serve.py             local static preview server
+.github/workflows/   GitHub Pages deployment
 
-- [x] Repo scaffold + config
-- [x] Download — West Yorkshire, rolling 12 months (`2025-05…2026-04`), via HTTP-range
-      selective extraction from the national archive (~66 MB, ~1 min, not 1.6 GB)
-- [x] Population — TS001 2021 LSOA usual residents downloaded
-- [x] Sanity check (`step1_sanity.py`) — `LSOA code` present, 295,480 crimes,
-      categories sane; **crime→2021 population join = 100%** (vintage aligned)
-- [x] `build_geojson.py` — boundaries (1,404 WY LSOAs, code-join, no spatial join),
-      per-capita rate + bundles + low-pop/high-rate flags + percentile →
-      `web/data/west-yorkshire.geojson` (3.9 MB, strict-JSON valid). Reviewed by a
-      21-agent adversarial workflow; blocker (invalid `NaN` JSON) + honesty fixes applied.
-- [x] Leaflet frontend — a single self-contained `web/index.html` (CSS + JS inlined, so it
-      can't render unstyled if assets fail to resolve). Percentile choropleth (colourblind-safe
-      YlOrRd, Carto Positron basemap), postcode search, detail panel (rate, stat strip, percentile
-      bar, category bars, sparkline, footfall caveat), client-side bundle toggles, methodology
-      dialog + OGL attribution, loading/error states. Verified in-browser.
-- [x] Deployed to GitHub Pages — **https://sarthk.github.io/crimemap-uk/**
-
-## Phase 2 — England & Wales (national)
-
-Same metric and principles, scaled to all ~43 forces and ~35,000 LSOAs. The browser
-can't load 35k polygons as raw GeoJSON, so the data is tiled to **PMTiles** (tippecanoe)
-and rendered with **MapLibre GL**. Tiles carry only scalar stats (each bundle's
-rate/percentile/flag/total); `by_category` + monthly trend live in a separate
-`national-details.json` fetched lazily on click.
-
-```bash
-python pipeline/download.py --national        # all 43 forces, 12 months (range extraction)
-python pipeline/download.py --population        # (once) TS001 population
-python pipeline/build_national.py              # aggregate → metric → slim GeoJSON + details → tippecanoe
-python serve.py 8000                            # Range-capable local server (plain http.server won't do PMTiles)
-#   → open http://localhost:8000/national.html
+pipeline/            retained legacy crime-data pipeline; not used by Students Map UK
+web/data/            retained legacy crime artifacts; not read by web/app.js
+CLAUDE.md            historical CrimeMap brief; not the current product contract
 ```
 
-Needs **tippecanoe** on `PATH` (or `CRIMEMAP_TIPPECANOE=/path/to/tippecanoe`).
+## Privacy and attribution
 
-- [x] `download.py --national` — all 43 forces (505 street CSVs, 5.8 M crimes)
-- [x] National boundaries — 35,672 E&W LSOAs (paginated ArcGIS)
-- [x] `build_national.py` — per-bundle national metric → `national.pmtiles` (46 MB) + `national-details.json` (3.9 MB)
-- [x] National map — MapLibre GL + PMTiles choropleth, bundle toggles, postcode search, panel, methodology. Verified in-browser.
-- [x] National is the landing page (`index.html`); West Yorkshire moved to `west-yorkshire.html`. Deployed to GitHub Pages.
+A postcode is sent to postcodes.io. Its returned coordinate—or a browser-approved
+location—is sent to one Overpass operator at a time. Those services and the basemap host
+receive normal web-request information such as the visitor's IP address. This site does
+not store searches or saved places.
+
+Place and map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
+available under the ODbL. Postcode lookup is provided by
+[postcodes.io](https://postcodes.io/). Basemap © CARTO and OpenStreetMap contributors.
+
+The repository does not yet include a separate software licence for the application
+code.
+
+## Legacy crime pipeline
+
+This repository began as CrimeMap UK. The Python pipeline and generated PMTiles/JSON
+files are kept for reference and possible future extraction, but they are not part of
+the current Students Map runtime. Do not describe the deployed site as a crime map, and
+do not make a crime-data refresh a prerequisite for changing the student places app.
+
+The current deployment workflow still validates and uploads the legacy artifacts. That
+is compatibility overhead, not a frontend dependency; separating or archiving it is a
+future repository-cleanup task.

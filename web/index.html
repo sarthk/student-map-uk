@@ -1,536 +1,187 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en-GB">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CrimeMap UK — England &amp; Wales</title>
-  <meta name="description" content="Reported crime per resident, by neighbourhood (LSOA), across England & Wales. A calm reference tool — numbers and caveats, not headlines." />
-  <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
-  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
-  <script src="https://unpkg.com/pmtiles@4.4.1/dist/pmtiles.js"></script>
-  <style>
-    :root {
-      --bg:#eaeef3; --panel:#fff; --panel-2:#f7f9fc; --ink:#0f1729; --soft:#51607a;
-      --faint:#93a0b5; --line:#e5eaf1; --accent:#4338ca; --accent-soft:#eef0fe; --accent-ink:#3730a3;
-      --shadow-sm:0 1px 2px rgba(15,23,41,.06),0 1px 3px rgba(15,23,41,.04);
-      --shadow-md:0 4px 12px rgba(15,23,41,.07),0 12px 32px rgba(15,23,41,.08);
-      --radius:16px; --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace;
-      --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-      --c1:#ffffb2; --c2:#fecc5c; --c3:#fd8d3c; --c4:#f03b20; --c5:#bd0026; --c-low:#cbd3de;
-    }
-    *{box-sizing:border-box} html,body{height:100%;margin:0}
-    body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
-    .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-    button{font-family:inherit}
-    #app{display:grid;grid-template-rows:auto auto 1fr;height:100vh;overflow:hidden}
-    #filterbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:9px 18px;background:var(--panel);border-bottom:1px solid var(--line);z-index:900}
-    #filterbar .fb-title{font-size:12px;font-weight:680;color:var(--ink)}
-    #filterbar label{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--soft)}
-    #filterbar select{font-family:inherit;font-size:12px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:5px 8px;cursor:pointer}
-    #filterbar select:focus{outline:none;border-color:var(--accent)}
-    #filterbar .fb-count{font-size:12px;font-weight:600;color:var(--accent-ink)}
-    #filterbar .fb-clear{margin-left:auto;font-size:11.5px;color:var(--soft);background:none;border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer}
-    #filterbar .fb-clear:hover{color:var(--ink);background:var(--panel-2)}
-    .hover-pop .maplibregl-popup-content{padding:5px 9px;display:flex;flex-direction:column;gap:1px}
-    .hover-pop b{font-size:12px} .hover-pop .hp-sub{font-family:var(--mono);font-size:9.5px;color:var(--faint)}
-    .hover-pop .maplibregl-popup-tip{display:none}
-    .find-hint{font-size:12px;color:var(--faint);line-height:1.5;margin:0}
-    header#top{display:flex;align-items:center;gap:12px;padding:0 18px;height:56px;background:rgba(255,255,255,.85);
-      backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--line);z-index:1000}
-    .logo{display:flex;align-items:center;gap:9px}
-    .logo .mark{width:26px;height:26px;border-radius:8px;background:var(--ink);display:grid;place-items:center;box-shadow:var(--shadow-sm)}
-    .logo h1{font-size:15.5px;font-weight:680;letter-spacing:-.2px;margin:0}
-    .chip{font-size:11px;font-weight:600;color:var(--soft);background:var(--panel-2);border:1px solid var(--line);padding:3px 9px;border-radius:999px}
-    .chip.visits{display:inline-flex;align-items:center;gap:5px;color:var(--accent-ink);background:var(--accent-soft);border-color:#dfe2fb;font-variant-numeric:tabular-nums}
-    .chip.visits svg{color:var(--accent)}
-    #top .spacer{flex:1}
-    .ghost-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:560;color:var(--soft);
-      background:transparent;border:1px solid var(--line);border-radius:9px;padding:7px 12px;cursor:pointer;transition:.14s;text-decoration:none}
-    .ghost-btn:hover{color:var(--ink);background:var(--panel-2)}
-    main#body{display:grid;grid-template-columns:384px 1fr;min-height:0}
-    #sidebar{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;background:var(--bg);border-right:1px solid var(--line)}
-    .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:16px}
-    .eyebrow{font-size:10.5px;font-weight:680;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin:0 0 9px}
-    .search-field{position:relative;display:flex;gap:8px}
-    .search-input-wrap{position:relative;flex:1}
-    .search-input-wrap svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint)}
-    #postcode{width:100%;padding:11px 12px 11px 34px;font-size:14px;font-family:var(--mono);border:1px solid var(--line);
-      border-radius:11px;background:var(--panel-2);color:var(--ink);transition:.14s}
-    #postcode::placeholder{color:var(--faint);font-family:var(--sans)}
-    #postcode:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 4px rgba(67,56,202,.12)}
-    #search button{padding:0 16px;height:42px;border:none;border-radius:11px;cursor:pointer;background:var(--accent);color:#fff;font-size:13.5px;font-weight:620}
-    #search button:hover{background:var(--accent-ink)}
-    .near-btn{display:inline-flex;align-items:center;gap:6px;margin-top:9px;padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);color:var(--soft);font-size:12px;font-weight:560;cursor:pointer;transition:.14s}
-    .near-btn:hover{color:var(--accent-ink);border-color:#cdd5e2;background:#fff}
-    .copy-link{flex:0 0 auto;border:1px solid var(--line);background:var(--panel-2);color:var(--soft);font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:7px;cursor:pointer}
-    .copy-link:hover{color:var(--accent-ink)}
-    .p-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px} .p-head-l{min-width:0}
-    .msg{min-height:15px;margin:9px 2px 0;font-size:12px;color:var(--accent-ink)} .msg.warn{color:#c0492f}
-    .segmented{display:flex;background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:3px;gap:3px}
-    .segmented button{flex:1;padding:8px 4px;border:none;background:transparent;cursor:pointer;font-size:12px;font-weight:560;color:var(--soft);border-radius:8px;transition:.14s}
-    .segmented button[aria-selected="true"]{background:#fff;color:var(--accent-ink);font-weight:660;box-shadow:var(--shadow-sm)}
-    .hint{margin:10px 2px 0;font-size:12px;line-height:1.5;color:var(--soft)}
-    #panel.empty .empty-state{display:flex;align-items:center;gap:11px}
-    #panel.empty .ic{width:34px;height:34px;border-radius:9px;background:var(--accent-soft);display:grid;place-items:center;flex:0 0 auto}
-    #panel.empty .ic svg{width:18px;height:18px;color:var(--accent)}
-    #panel.empty p{margin:0;font-size:12.5px;line-height:1.5;color:var(--soft)}
-    .p-head h2{font-size:16.5px;font-weight:660;margin:0;letter-spacing:-.2px}
-    .p-head .code{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
-    .headline{display:flex;align-items:flex-end;gap:10px;margin:14px 0 4px}
-    .headline .rate{font-family:var(--mono);font-size:38px;font-weight:600;line-height:.9;letter-spacing:-1px;font-variant-numeric:tabular-nums}
-    .headline .unit{font-size:11.5px;color:var(--soft);line-height:1.3;padding-bottom:3px}
-    .stat-strip{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin:14px 0;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-    .stat{background:var(--panel);padding:10px 12px}
-    .stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint)}
-    .stat .v{font-family:var(--mono);font-size:16px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
-    .standing{margin:14px 0}
-    .standing .lab{display:flex;justify-content:space-between;font-size:11.5px;color:var(--soft);margin-bottom:6px}
-    .standing .lab b{font-family:var(--mono);color:var(--ink)}
-    .pbar{position:relative;height:8px;border-radius:999px;background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5))}
-    .pbar .mk{position:absolute;top:50%;width:13px;height:13px;border-radius:50%;background:#fff;border:2.5px solid var(--ink);transform:translate(-50%,-50%);box-shadow:var(--shadow-sm)}
-    .callout{display:flex;gap:9px;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:11px;margin:14px 0;background:#fff7ea;border:1px solid #f3e2bd;color:#7a5310}
-    .callout.low{background:var(--panel-2);border-color:var(--line);color:var(--soft)}
-    .callout svg{flex:0 0 auto;width:16px;height:16px;margin-top:1px}
-    .bars{display:flex;flex-direction:column;gap:9px}
-    .bar-row .top{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
-    .bar-row .top .n{color:var(--soft)} .bar-row .top .v{font-family:var(--mono);color:var(--ink)}
-    .bar-row .track{height:6px;background:var(--panel-2);border-radius:999px;overflow:hidden}
-    .bar-row .fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#fd8d3c,#f03b20);transition:width .5s}
-    .spark-wrap{margin-top:6px;background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
-    .spark-wrap svg{display:block;width:100%;height:44px} .spark-wrap .cap{font-size:10.5px;color:var(--faint);margin-top:5px}
-    .muted{font-size:11.5px;color:var(--faint)}
-    .reading{font-size:12.5px;line-height:1.55;color:var(--soft);margin:13px 0 6px}
-    .trend{font-size:12px;margin:0 0 4px}
-    .trend .dir{font-weight:680} .trend .up{color:#c0492f} .trend .down{color:#2e7d54} .trend .flat{color:var(--soft)}
-    .price-box{display:flex;flex-direction:column;gap:2px;margin:13px 0;padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:11px}
-    .price-box .k{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint)}
-    .price-box .pv{font-family:var(--mono);font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
-    .price-box .muted{font-size:10.5px}
-    .price-box .yield-line{font-size:12px;color:var(--soft);margin-top:4px}
-    .price-box .yield-line b{font-family:var(--mono);color:var(--ink)}
-    .find-card .frow{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--soft);margin:10px 0 3px}
-    .find-card .frow b{font-family:var(--mono);color:var(--ink)}
-    .find-card input[type=range]{width:100%;accent-color:var(--accent);margin:0}
-    .find-count{font-size:11.5px;color:var(--soft);margin:11px 0 0}
-    .find-card .results{margin-top:8px;display:flex;flex-direction:column;max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
-    .find-card .results:empty{display:none}
-    .find-card .res{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line)}
-    .find-card .res:last-child{border-bottom:none} .find-card .res:hover{background:var(--panel-2)}
-    .find-card .res .nm{font-size:12px;font-weight:560} .find-card .res .meta{font-size:10.5px;color:var(--faint);font-family:var(--mono)}
-    .find-card .res .yld{font-family:var(--mono);font-weight:660;font-size:13px;color:var(--accent-ink)}
-    .affil{margin:16px 0 0;padding-top:13px;border-top:1px solid var(--line)}
-    .affil .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
-    .affil a{font-size:11.5px;font-weight:560;color:var(--accent-ink);background:var(--accent-soft);border:1px solid #dfe2fb;border-radius:8px;padding:6px 10px;text-decoration:none}
-    .affil a:hover{background:#e6e9fd}
-    .affil .disc{font-size:10px;color:var(--faint);margin-top:8px;line-height:1.45}
-    .legend .ramp{height:10px;border-radius:999px;margin:4px 0 6px;background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5))}
-    .legend .ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint)}
-    .legend .chips{display:flex;gap:14px;margin-top:12px}
-    .legend .lchip{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--soft)}
-    .legend .sw{width:15px;height:12px;border-radius:3px;border:1px solid rgba(0,0,0,.1)}
-    .legend .sw.caution{background-image:repeating-linear-gradient(45deg,#bd0026,#bd0026 2px,#7a0023 2px,#7a0023 4px)}
-    .legend .note{font-size:10.5px;color:var(--faint);line-height:1.45;margin-top:11px}
-    footer.attr{font-size:10.5px;color:var(--faint);line-height:1.5;padding:2px 4px 8px} footer.attr a{color:var(--soft)}
-    #map-area{position:relative;padding:14px;min-height:0}
-    #map{position:absolute;inset:14px;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-md);border:1px solid var(--line);background:#e9edf2}
-    .maplibregl-popup-content{border-radius:10px;box-shadow:var(--shadow-md);font-family:var(--sans);padding:8px 12px}
-    .overlay{position:absolute;inset:14px;border-radius:var(--radius);display:grid;place-items:center;background:rgba(244,247,250,.82);backdrop-filter:blur(2px);z-index:600}
-    .overlay.hidden{display:none}
-    .spinner{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;margin:0 auto 12px;animation:spin .8s linear infinite}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    .overlay .box{text-align:center;color:var(--soft)} .overlay .box p{margin:0;font-size:13px} .overlay .box .small{font-size:11.5px;color:var(--faint);margin-top:5px;max-width:300px}
-    dialog#method{max-width:640px;width:calc(100% - 40px);border:none;border-radius:18px;padding:0;box-shadow:0 30px 80px rgba(15,23,41,.35);color:var(--ink)}
-    dialog#method::backdrop{background:rgba(15,23,41,.5)}
-    #method-body{padding:28px 30px 10px;max-height:74vh;overflow-y:auto}
-    #method-body h2{margin:0 0 4px;font-size:19px} #method-body h3{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);margin:20px 0 6px}
-    #method-body p,#method-body li{font-size:13.5px;line-height:1.62} #method-body a{color:var(--accent)}
-    dialog#method form{padding:14px 30px 24px;text-align:right}
-    dialog#method .close{padding:9px 18px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);cursor:pointer;font-size:13px}
-    @media (max-width:820px){main#body{grid-template-columns:1fr;grid-template-rows:minmax(0,46%) 1fr}#sidebar{border-right:none;border-bottom:1px solid var(--line)}}
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#5b3cc4">
+  <meta name="description" content="Search any UK postcode and discover nearby study spaces, food, groceries, health services, fitness, transport, essentials and things to do using OpenStreetMap data loaded on request.">
+  <meta property="og:title" content="Students Map UK — your postcode, unpacked">
+  <meta property="og:description" content="A student-first map of useful places loaded around any UK postcode when you search.">
+  <meta property="og:type" content="website">
+  <title>Students Map UK — your postcode, unpacked</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="preconnect" href="https://basemaps.cartocdn.com">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <script defer src="app.js"></script>
 </head>
 <body>
-  <h2 class="sr-only">Map of reported crime per resident across England &amp; Wales neighbourhoods, with postcode search and crime-type filters.</h2>
-  <div id="app">
-    <header id="top">
-      <div class="logo"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg></span><h1>CrimeMap&nbsp;UK</h1></div>
-      <span class="chip">England &amp; Wales</span>
-      <span class="spacer"></span>
-      <span class="chip visits" id="visits" style="display:none"></span>
-      <button type="button" id="open-method" class="ghost-btn">Methodology</button>
+  <a class="skip-link" href="#explorer">Skip to place results</a>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Students Map UK home">
+        <span class="brand-mark" aria-hidden="true"><span>✦</span></span>
+        <span class="brand-copy"><strong>Students Map UK</strong><small>Your postcode, unpacked</small></span>
+      </a>
+
+      <form id="search-form" class="postcode-search" novalidate>
+        <label class="sr-only" for="postcode">Search a UK postcode</label>
+        <div class="search-row">
+          <span class="search-icon" aria-hidden="true"></span>
+          <input id="postcode" name="postcode" inputmode="text" autocomplete="postal-code" autocapitalize="characters" spellcheck="false" placeholder="Enter a UK postcode · e.g. LS1 4DY" aria-describedby="privacy-note search-status">
+          <button class="primary-button" type="submit">Explore</button>
+          <button class="locate-button" id="locate" type="button" title="Use my current location" aria-label="Use my current location">⌖</button>
+        </div>
+        <p id="search-status" class="search-status" role="status" aria-live="polite"></p>
+      </form>
+
+      <nav class="header-actions" aria-label="Site actions">
+        <a class="game-link" href="game.html"><span aria-hidden="true">🎮</span> Play</a>
+        <button class="quiet-button" id="about-button" type="button">About the data</button>
+      </nav>
     </header>
-    <div id="filterbar">
-      <span class="fb-title">Find areas</span>
-      <label>Crime <select id="f-crime"><option value="1">Any</option><option value="0.5">Low (≤ 50th)</option><option value="0.25">Lowest (≤ 25th)</option></select></label>
-      <label>Max price <select id="f-price"><option value="0">Any</option><option value="200000">£200k</option><option value="350000">£350k</option><option value="500000">£500k</option><option value="750000">£750k</option></select></label>
-      <label>Min yield <select id="f-yield"><option value="0">Any</option><option value="4">4%</option><option value="5">5%</option><option value="6">6%</option><option value="7">7%</option><option value="8">8%</option></select></label>
-      <label>Sort <select id="f-sort"><option value="yield">Highest yield</option><option value="price">Lowest price</option><option value="crime">Lowest crime</option></select></label>
-      <span class="fb-count" id="f-count"></span>
-      <button type="button" class="fb-clear" id="f-clear">Clear</button>
-    </div>
-    <main id="body">
-      <aside id="sidebar">
-        <section class="card">
-          <p class="eyebrow">Find your area</p>
-          <form id="search" class="search-field" autocomplete="off">
-            <span class="search-input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
-              <input id="postcode" type="text" placeholder="Postcode, e.g. LS1 4DY" aria-label="Postcode" /></span>
-            <button type="submit">Go</button>
-          </form>
-          <button type="button" id="near-me" class="near-btn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Use my location</button>
-          <p id="search-msg" class="msg" role="status"></p>
-        </section>
-        <section class="card">
-          <p class="eyebrow">Crime types shown</p>
-          <div id="bundle-toggle" class="segmented" role="tablist"></div>
-          <p id="bundle-desc" class="hint"></p>
+
+    <p id="privacy-note" class="privacy-strip">When you search, the postcode is sent to postcodes.io and its coordinates are sent to an OpenStreetMap query service. Nothing is saved by this site.</p>
+
+    <main class="workspace">
+      <aside class="explorer" id="explorer" aria-label="Student places explorer">
+        <section class="welcome" id="welcome">
+          <span class="eyebrow">A useful first day in any UK city</span>
+          <h1>Land somewhere new.<br><em>Know what’s around.</em></h1>
+          <p class="welcome-lead">Search any active UK postcode for study spots, coffee, groceries, health services, gyms, transport, everyday errands and genuinely fun places nearby.</p>
+
+          <div class="quick-searches" aria-label="Example postcode searches">
+            <span>Try a student area</span>
+            <div>
+              <button type="button" data-postcode="LS1 4DY">Leeds</button>
+              <button type="button" data-postcode="WC1E 6BT">London</button>
+              <button type="button" data-postcode="EH8 9YL">Edinburgh</button>
+              <button type="button" data-postcode="CF10 3AT">Cardiff</button>
+            </div>
+          </div>
+
+          <div class="category-preview" aria-label="Place categories">
+            <div><span aria-hidden="true">📚</span><strong>Study</strong><small>Libraries, campuses, coworking</small></div>
+            <div><span aria-hidden="true">🥦</span><strong>Daily life</strong><small>Groceries, pharmacies, laundry</small></div>
+            <div><span aria-hidden="true">🏃</span><strong>Move</strong><small>Gyms, parks, buses, bikes</small></div>
+            <div><span aria-hidden="true">🎭</span><strong>Have a life</strong><small>Cinemas, music, culture, cafés</small></div>
+          </div>
+
+          <div class="honesty-note">
+            <span aria-hidden="true">◎</span>
+            <p><strong>Loaded when you search, not magically complete.</strong> Results come from community-maintained OpenStreetMap data. A missing place is not proof that it does not exist, and opening hours can change.</p>
+          </div>
         </section>
 
-        <section class="card find-card" id="find">
-          <p class="eyebrow">Matching areas</p>
-          <p class="find-hint" id="f-hint">Use the <b>Find areas</b> bar at the top to shortlist areas across England &amp; Wales by crime, price and yield — then click one.</p>
-          <div class="results" id="f-results"></div>
+        <section class="results" id="results" hidden>
+          <div class="results-heading">
+            <div>
+              <span class="eyebrow" id="area-kicker">Around your postcode</span>
+              <h1 id="area-title">Nearby student places</h1>
+              <p id="area-subtitle"></p>
+            </div>
+            <button class="surprise-button" id="surprise" type="button"><span aria-hidden="true">✦</span> Pick for me</button>
+          </div>
+
+          <div class="freshness-row">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span id="freshness">Loading the latest available map snapshot…</span>
+          </div>
+
+          <div class="category-scroll" id="category-list" role="group" aria-label="Filter place category"></div>
+
+          <div class="result-tools">
+            <label class="filter-search">
+              <span class="sr-only">Filter results by name</span>
+              <input id="place-filter" type="search" placeholder="Filter places…" autocomplete="off">
+            </label>
+            <label class="sort-control">
+              <span class="sr-only">Sort places</span>
+              <select id="sort-results">
+                <option value="distance">Nearest first</option>
+                <option value="name">A–Z</option>
+              </select>
+            </label>
+            <button class="plan-toggle" id="plan-toggle" type="button" aria-pressed="false">My list <span id="plan-count">0</span></button>
+          </div>
+
+          <div class="result-summary" role="status" aria-live="polite" aria-atomic="true"><strong id="result-count">0 places</strong><span>Distances are straight-line estimates</span></div>
+          <div class="place-list" id="place-list"></div>
+          <button class="load-more" id="load-more" type="button" hidden>Show more places</button>
         </section>
-        <section id="panel" class="card empty">
-          <div class="empty-state"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11a3 3 0 1 0 6 0 3 3 0 0 0-6 0z"/><path d="M17.6 17.6 22 22"/><path d="M3 11a8 8 0 1 0 16 0 8 8 0 0 0-16 0z"/></svg></span>
-          <p>Click any neighbourhood, or search a postcode, to see its numbers.</p></div>
-        </section>
-        <section id="legend" class="card legend"></section>
-        <footer class="attr">Crime © <a href="https://data.police.uk" target="_blank" rel="noopener">police.uk</a> · Population &amp; boundaries © <a href="https://www.ons.gov.uk" target="_blank" rel="noopener">ONS</a> · <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL&nbsp;v3</a>. Basemap © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>, © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</footer>
+
+        <footer class="site-footer">
+          <p>Places © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Postcodes by <a href="https://postcodes.io" target="_blank" rel="noopener">postcodes.io</a>. Basemap © CARTO and OpenStreetMap contributors.</p>
+          <p><a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Spot something wrong or missing?</a> Help improve the map.</p>
+        </footer>
       </aside>
-      <section id="map-area">
-        <div id="map"></div>
-        <div id="overlay" class="overlay"><div class="box"><div class="spinner" id="spinner"></div><p id="overlay-text">Loading England &amp; Wales…</p><p class="small" id="overlay-sub"></p></div></div>
+
+      <section class="map-pane" aria-label="Map of nearby student places">
+        <div id="map" role="region" aria-label="Interactive map. Search a postcode, then use the accessible result list to inspect nearby places."></div>
+
+        <div class="radius-control">
+          <label for="radius">Search radius</label>
+          <select id="radius">
+            <option value="600">600 m</option>
+            <option value="1200" selected>1.2 km</option>
+            <option value="2000">2 km</option>
+          </select>
+        </div>
+
+        <div class="map-key" id="map-key" hidden>
+          <span><i class="key-dot place"></i> Place</span>
+          <span><i class="key-dot centre"></i> Your search</span>
+          <span><i class="key-dot cluster"></i> Cluster</span>
+        </div>
+
+        <div class="map-loading" id="map-loading" role="status">
+          <div class="loader" aria-hidden="true"></div>
+          <strong id="loading-title">Loading the UK map…</strong>
+          <span id="loading-detail">Places appear after a postcode search</span>
+        </div>
+
+        <article class="place-card" id="place-card" hidden aria-live="polite"></article>
       </section>
     </main>
   </div>
-  <dialog id="method"><article id="method-body"></article><form method="dialog"><button class="close">Close</button></form></dialog>
 
-  <script>
-  const PMTILES_URL = 'pmtiles://./data/national.pmtiles';
-  const DETAILS_URL = 'data/national-details.json';
-  const SRC = 'national', LYR = 'lsoa';
-  const SCALE = ['#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026'], C_LOW = '#cbd3de';
-  const BUNDLES = [
-    { key:'residential_risk', code:'res', label:'Residential', desc:'Crimes most tied to living somewhere: burglary, robbery, violence & sexual offences, vehicle crime, criminal damage, theft from the person.' },
-    { key:'footfall_heavy', code:'foot', label:'Footfall', desc:'These track where people gather, not where they live: shoplifting, anti-social behaviour, public order, other theft, drugs. Off by default.' },
-    { key:'all', code:'all', label:'All crime', desc:'Every reported crime category.' },
-  ];
-  const byCodeBundle = Object.fromEntries(BUNDLES.map(b => [b.code, b]));
-  let active = 'res', selected = null, details = null, detailsPromise = null, map;
-  let filterRows = null, filterPromise = null;
-  // Disclosed referral links — money flows AROUND the data, never into it (no pay-to-rank).
-  // Put your own affiliate URLs here; empty = button hidden.
-  const AFFILIATE = { mortgage: '', conveyancer: '', survey: '' };
-  // Cookie-free visit counter (deduped per browser per day, so refreshes don't inflate it).
-  // Set `goatcounter` to a free goatcounter.com site code for TRUE unique visitors + a dashboard.
-  const VISITS = { goatcounter: '', ns: 'vicinia-crimemap', key: 'site' };
-  const $ = s => document.querySelector(s);
-  const fmt = n => Number(n).toLocaleString('en-GB');
+  <dialog class="about-dialog" id="about-dialog" aria-labelledby="about-title">
+    <div class="dialog-header">
+      <div><span class="eyebrow">Transparent by design</span><h2 id="about-title">What Students Map UK actually knows</h2></div>
+      <button class="dialog-close" id="about-close" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="dialog-body">
+      <section>
+        <h3>Useful places, fetched when you ask</h3>
+        <p>A postcode is converted to a coordinate by postcodes.io. The app then asks an OpenStreetMap Overpass service for selected, student-useful map features within your chosen radius. The timestamp shown after a search is the OpenStreetMap database snapshot used for that query.</p>
+      </section>
+      <section>
+        <h3>What “nearby” means</h3>
+        <p>Distances are straight-line estimates from the postcode coordinate, not walking routes or journey times. A river, railway, campus entrance or road layout can make the real journey longer. Directions open on OpenStreetMap so you can check the route.</p>
+      </section>
+      <section>
+        <h3>What can be missing or wrong</h3>
+        <p>OpenStreetMap is maintained by a global community. Coverage varies, names and opening hours may be stale, and a business can close before the map is updated. “No results” never means “none exist”. Check important details with the venue itself.</p>
+      </section>
+      <section>
+        <h3>Privacy</h3>
+        <p>This site has no accounts, advertising tracker or behavioural analytics. Direct requests disclose normal web-request details such as your IP address and browser referrer to postcodes.io, the selected OpenStreetMap query operator and the basemap provider. A postcode is sent to postcodes.io. Its coordinate—or your approximate coordinate after browser permission—is sent to one OpenStreetMap query service at a time. Your temporary “My list” stays in this tab and disappears when it closes.</p>
+      </section>
+      <section>
+        <h3>Scope and safety</h3>
+        <p>The discovery map works around active UK postcodes, including Scotland and Northern Ireland; map coverage is not guaranteed. It does not verify businesses, show live capacity or accommodation availability, provide medical advice, or rate neighbourhood safety. In an emergency call 999; for non-emergency NHS help use official NHS services.</p>
+      </section>
+      <section>
+        <h3>Open data, with limits</h3>
+        <p>Place data is © OpenStreetMap contributors and available under the ODbL. Public Overpass services are best-effort and may occasionally be busy. The app retries another public endpoint before showing an error.</p>
+      </section>
+    </div>
+    <div class="dialog-footer"><button class="primary-button" id="about-done" type="button">Back to the map</button></div>
+  </dialog>
 
-  // Flagged areas — low residential population OR a footfall-inflated top-1% rate —
-  // are GREYED, not painted max-red. A city-centre per-capita rate is mostly footfall,
-  // not residential risk; painting it blood-red would mislead the same way raw counts
-  // do, just inverted. The real number + a plain-language caveat stay in the panel.
-  // Flagged areas — low residential population OR a footfall-inflated top-1% rate —
-  // are GREYED, not painted max-red: a city-centre per-capita rate is mostly footfall,
-  // not residential risk, and blood-red would mislead the same way raw counts do.
-  // The real figure + a plain-language caveat stay in the panel.
-  function fillPaint(code) {
-    return ['case',
-      ['get','low_pop_flag'], C_LOW,
-      ['==', ['get','h_'+code], true], C_LOW,
-      ['has','p_'+code], ['step', ['get','p_'+code], SCALE[0], 0.5, SCALE[1], 0.75, SCALE[2], 0.90, SCALE[3], 0.99, SCALE[4]],
-      C_LOW];
-  }
-  function fail(t, s) { $('#spinner').style.display='none'; $('#overlay-text').textContent=t; $('#overlay-sub').textContent=s||''; $('#overlay').classList.remove('hidden'); }
-
-  // --- detail lookup (lazy; one fetch for the per-LSOA breakdown + sparkline) ---
-  function ensureDetails() {
-    if (details) return Promise.resolve(details);
-    if (!detailsPromise) detailsPromise = fetch(DETAILS_URL).then(r => r.json()).then(d => (details = d));
-    return detailsPromise;
-  }
-  function spark(monthly) {
-    const w=280,h=44,max=Math.max(1,...monthly),step=w/(monthly.length-1);
-    const line=monthly.map((v,i)=>[(i*step).toFixed(1),(h-(v/max)*(h-6)-3).toFixed(1)].join(',')).join(' ');
-    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polygon points="0,${h} ${line} ${w},${h}" fill="rgba(240,59,32,.10)"/><polyline points="${line}" fill="none" stroke="#f03b20" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
-  }
-
-  // Direction over time: compare the most recent half of the window to the previous
-  // half. Halves (not single months) tame the noise; tiny totals are called out, not faked.
-  function trendInfo(m) {
-    if (!m || m.length < 4) return null;
-    const total = m.reduce((a, b) => a + b, 0);
-    const h = Math.floor(m.length / 2);
-    if (total < 20) return { cls:'flat', arrow:'•', label:'Too few to call', detail:`only ${total} over ${m.length} months` };
-    const earlier = m.slice(0, m.length - h).reduce((a, b) => a + b, 0);
-    const recent = m.slice(m.length - h).reduce((a, b) => a + b, 0);
-    if (earlier === 0) return null;
-    const pct = Math.round((recent - earlier) / earlier * 100);
-    if (pct >= 12) return { cls:'up', arrow:'↑', label:'Rising', detail:`${pct}% higher in the last ${h} months than the previous ${h}` };
-    if (pct <= -12) return { cls:'down', arrow:'↓', label:'Falling', detail:`${Math.abs(pct)}% lower in the last ${h} months than the previous ${h}` };
-    return { cls:'flat', arrow:'→', label:'Broadly stable', detail:`within ±12% over the last ${h} months` };
-  }
-
-  // Plain-language reading — neutral and descriptive, never a causal claim about crime.
-  function readingText(p, code) {
-    const footShare = p.t_all > 0 ? p.t_foot / p.t_all : 0, fs = Math.round(footShare * 100);
-    if (p.low_pop_flag === true) return 'Very few people live here, so the per-resident rate is unreliable — read the counts, not the colour.';
-    if (p['h_'+code] === true) return `Among the highest reported-crime rates per resident in England & Wales — typically a town- or city-centre area. Around ${fs}% of recorded crime here is footfall categories (shopping, nightlife, anti-social behaviour) that fall on visitors as much as residents, so the per-resident figure overstates the risk of living here.`;
-    const pr = p['p_'+code];
-    const band = pr == null ? null : pr>=0.9?'higher than most areas':pr>=0.6?'a little above the middle':pr>=0.4?'around the middle':pr>=0.1?'a little below the middle':'lower than most areas';
-    const label = { res:'residential-risk', foot:'footfall', all:'all-crime' }[code] || '';
-    let s = band ? `For ${label} crime, this area sits ${band} in England & Wales.` : '';
-    if (footShare >= 0.5 && code !== 'foot') s += ` A large share (${fs}%) of all recorded crime here is footfall categories, which reflect visitors as much as residents.`;
-    return s;
-  }
-
-  function showPanel(p) {
-    const b = byCodeBundle[active];
-    const rate = p['r_'+active], pct = p['p_'+active], total = p['t_'+active];
-    const low = p.low_pop_flag === true || p.low_pop_flag === 'true';
-    const high = p['h_'+active] === true || p['h_'+active] === 'true';
-    const pn = (pct==null) ? null : Math.round(pct*100);
-    const standing = pn==null ? '—' : pn>=99 ? 'among the highest' : pn<=1 ? 'among the lowest' : `higher than <b>${pn}%</b>`;
-    const warn = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>`;
-    const cav = low ? {cls:'low', t:'Low residential population — the per-resident rate may overstate risk.'}
-              : high ? {cls:'high', t:'Among the highest rates in England & Wales. Town/city-centre areas often record crime against non-residents (visitors, workers, shoppers) as well as residents, so a per-resident rate can read high here — compare with care.'} : null;
-    $('#panel').classList.remove('empty');
-    $('#panel').innerHTML = `
-      <div class="p-head"><div class="p-head-l"><h2>${p.lsoa21nm}</h2><div class="code">${p.lsoa21cd} · ${b.label} · reported crime</div></div><button class="copy-link" id="copy-link">Copy link</button></div>
-      <div class="headline"><span class="rate">${rate==null?'—':Number(rate).toFixed(1)}</span><span class="unit">per 1,000<br>residents</span></div>
-      <div class="stat-strip"><div class="stat"><div class="k">Reported crimes</div><div class="v">${fmt(total)}</div></div><div class="stat"><div class="k">Residents</div><div class="v">${p.pop==null?'—':fmt(p.pop)}</div></div></div>
-      <div class="standing"><div class="lab"><span>Standing in England &amp; Wales</span><span>${standing}</span></div><div class="pbar">${pct==null?'':`<span class="mk" style="left:${pct*100}%"></span>`}</div></div>
-      ${cav?`<div class="callout ${cav.cls}">${cav.cls==='low'?'':warn}<span>${cav.t}</span></div>`:''}
-      <p class="reading">${readingText(p, active)}</p>
-      <div id="trend" class="trend"><span class="muted">trend…</span></div>
-      <div id="price" class="price-box"><span class="muted">price…</span></div>
-      <p class="eyebrow" style="margin:16px 0 9px">Breakdown · ${b.label.toLowerCase()}</p>
-      <div id="bars" class="bars"><p class="muted">loading…</p></div>
-      <p class="eyebrow" style="margin:16px 0 0">Monthly · residential-risk bundle</p>
-      <div id="spark" class="spark-wrap"><p class="muted">loading…</p></div>
-      <div class="affil"><div class="eyebrow" style="margin:0">Moving to this area?</div><div class="row" id="affil-row"></div><div class="disc">Referral links — we may earn a fee if you use one. It never changes the data, the colours, or the rankings.</div></div>`;
-    const cl = $('#copy-link');
-    if (cl) cl.onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(location.href); cl.textContent = 'Copied ✓'; setTimeout(() => { cl.textContent = 'Copy link'; }, 1500); };
-    const ar = $('#affil-row');
-    if (ar) { const L = { mortgage: 'Mortgage quotes', conveyancer: 'Conveyancers', survey: 'Surveyors' };
-      ar.innerHTML = Object.keys(L).map(k => AFFILIATE[k]
-        ? `<a href="${AFFILIATE[k]}" target="_blank" rel="noopener nofollow sponsored">${L[k]}</a>`
-        : `<a href="#" onclick="return false" title="Set AFFILIATE.${k} in the source to enable">${L[k]}</a>`).join(''); }
-    ensureDetails().then(d => {
-      const rec = d.lsoa[p.lsoa21cd]; if (!rec) return;
-      const cats = d.categories, want = new Set(d.bundles[b.key]);
-      const rows = cats.map((c,i)=>[c, rec.c[i]]).filter(x=>want.has(x[0])).sort((a,b)=>b[1]-a[1]).slice(0,8);
-      const mx = Math.max(1, ...rows.map(r=>r[1]));
-      $('#bars').innerHTML = rows.map(([c,v])=>`<div class="bar-row"><div class="top"><span class="n">${c}</span><span class="v">${fmt(v)}</span></div><div class="track"><div class="fill" style="width:${v/mx*100}%"></div></div></div>`).join('');
-      $('#spark').innerHTML = spark(rec.m) + `<div class="cap">Last ${d.window_months} months · most recent at right</div>`;
-      const ti = trendInfo(rec.m), te = $('#trend');
-      if (te) te.innerHTML = ti ? `<span class="dir ${ti.cls}">${ti.arrow} ${ti.label}</span> <span class="muted">— ${ti.detail} · residential-risk</span>` : '';
-      const pb = $('#price');
-      if (pb) {
-        let h = rec.price != null
-          ? `<span class="k">Median house price</span><b class="pv">£${fmt(rec.price)}</b><span class="muted">${d.price_label || ''}${rec.price_pctl != null ? ` · pricier than ${Math.round(rec.price_pctl*100)}% of areas` : ''}</span>`
-          : `<span class="muted">Median house price — not published for this area (few sales, or the LSOA changed since 2011).</span>`;
-        if (rec.yield != null) h += `<div class="yield-line">Est. gross yield <b>${rec.yield.toFixed(1)}%</b> · <span class="muted">rent at local-authority level — estimate</span></div>`;
-        pb.innerHTML = h;
-      }
-    });
-  }
-
-  function select(code, props) {
-    selected = code;
-    map.setFilter('sel', ['==', ['get','lsoa21cd'], code || '']);
-    if (code) history.replaceState(null, '', '#' + code);  // shareable per-area URL
-    if (props) showPanel(props);
-  }
-
-  function featureCenter(g) {
-    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-    const walk = a => { if (typeof a[0] === 'number') { if (a[0]<minx)minx=a[0]; if (a[0]>maxx)maxx=a[0]; if (a[1]<miny)miny=a[1]; if (a[1]>maxy)maxy=a[1]; } else for (const x of a) walk(x); };
-    walk(g.coordinates); return [(minx+maxx)/2, (miny+maxy)/2];
-  }
-  // Deep-link / shareable URL: fly to an LSOA by code and open its panel.
-  function goToCode(code) {
-    const find = () => map.querySourceFeatures(SRC, { sourceLayer: LYR, filter: ['==',['get','lsoa21cd'], code] });
-    const fs = find(); if (!fs.length) return false;
-    map.flyTo({ center: featureCenter(fs[0].geometry), zoom: 12 });
-    map.once('idle', () => { const f2 = find(); if (f2.length) select(code, f2[0].properties); });
-    return true;
-  }
-  // "Near me": browser geolocation → reverse-geocode to LSOA (postcodes.io) → fly + select.
-  function nearMe() {
-    const msg = $('#search-msg');
-    if (!navigator.geolocation) { msg.className='msg warn'; msg.textContent='Location not available in this browser.'; return; }
-    msg.className='msg'; msg.textContent='Finding your location…';
-    navigator.geolocation.getCurrentPosition(async pos => {
-      const lon = pos.coords.longitude, lat = pos.coords.latitude;
-      try {
-        const res = (await (await fetch(`https://api.postcodes.io/postcodes?lon=${lon}&lat=${lat}`)).json()).result;
-        const first = res && res[0];
-        const code = first && first.codes && (first.codes.lsoa21 || first.codes.lsoa);
-        map.flyTo({ center: [lon, lat], zoom: 13 });
-        map.once('idle', () => {
-          const fs = code ? map.querySourceFeatures(SRC, { sourceLayer: LYR, filter: ['==',['get','lsoa21cd'], code] }) : [];
-          if (fs.length) { select(code, fs[0].properties); msg.textContent = `Your area → ${first.lsoa21 || first.lsoa || ''}`; }
-          else { msg.className='msg warn'; msg.textContent = 'Your location is outside England & Wales.'; }
-        });
-      } catch (e) { msg.className='msg warn'; msg.textContent = 'Could not look up your area.'; }
-    }, err => { msg.className='msg warn'; msg.textContent = err.code === 1 ? 'Location permission denied.' : 'Could not get your location.'; },
-       { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
-  }
-
-  function ensureFilter() {
-    if (filterRows) return Promise.resolve(filterRows);
-    if (!filterPromise) filterPromise = fetch('data/national-filter.json').then(r => r.json()).then(d => (filterRows = d.rows));
-    return filterPromise;
-  }
-  const fmtPrice = p => p >= 1e6 ? '£' + (p/1e6).toFixed(1) + 'm' : '£' + Math.round(p/1000) + 'k';
-  // The criteria filter — the hinge: "show me areas that are X", ranked for investors by yield.
-  // rows = [code, name, crimePctlResidential, price, grossYieldPct].
-  const MATCH_FILL = '#4338ca';                 // bold highlight — pops on the pale basemap
-  const NONE = ['==', ['get', 'lsoa21cd'], '__none__'];
-  const setMap = (fn) => { if (map && map.getLayer && map.getLayer('fill')) fn(); };
-  function applyFilter() {
-    const maxCrime = +$('#f-crime').value, minYield = +$('#f-yield').value, maxPrice = +$('#f-price').value, sortBy = $('#f-sort').value;
-    const off = maxCrime >= 1 && minYield <= 0 && maxPrice <= 0;
-    const hint = $('#f-hint');
-    if (off) {  // back to the crime choropleth
-      $('#f-count').textContent = ''; if (hint) hint.style.display = ''; $('#f-results').innerHTML = '';
-      setMap(() => { map.setFilter('fill', null); map.setPaintProperty('fill', 'fill-color', fillPaint(active));
-        map.setPaintProperty('fill', 'fill-opacity', 0.7);
-        map.setFilter('caution', ['==', ['get', 'h_' + active], true]); map.setFilter('matchline', NONE); });
-      return;
-    }
-    ensureFilter().then(rows => {
-      const m = rows.filter(r => r[2] != null && r[2] <= maxCrime
-        && (minYield <= 0 || (r[4] != null && r[4] >= minYield))
-        && (maxPrice <= 0 || (r[3] != null && r[3] <= maxPrice)));
-      const cmp = { yield: (a, b) => (b[4] ?? -1) - (a[4] ?? -1),     // high → low
-                    price: (a, b) => (a[3] ?? 1e12) - (b[3] ?? 1e12), // low → high
-                    crime: (a, b) => (a[2] ?? 2) - (b[2] ?? 2) }[sortBy];  // low → high
-      m.sort(cmp);
-      $('#f-count').textContent = `${m.length.toLocaleString('en-GB')} match`;
-      if (hint) hint.style.display = 'none';
-      $('#f-results').innerHTML = m.slice(0, 80).map(r =>
-        `<div class="res" data-code="${r[0]}"><div><div class="nm">${r[1]}</div><div class="meta">crime ${r[2] != null ? Math.round(r[2]*100)+'p' : '—'} · ${r[3] != null ? fmtPrice(r[3]) : '£—'}</div></div><div class="yld">${r[4] != null ? r[4].toFixed(1)+'%' : '—'}</div></div>`).join('');
-      $('#f-results').querySelectorAll('.res').forEach(el => el.addEventListener('click', () => goToCode(el.dataset.code)));
-      const f = ['all', ['<=', ['get', 'p_res'], maxCrime]];
-      if (minYield > 0) f.push(['all', ['has', 'yield'], ['>=', ['get', 'yield'], minYield]]);
-      if (maxPrice > 0) f.push(['all', ['has', 'price'], ['<=', ['get', 'price'], maxPrice]]);
-      setMap(() => { map.setFilter('fill', f); map.setPaintProperty('fill', 'fill-color', MATCH_FILL);
-        map.setPaintProperty('fill', 'fill-opacity', 0.92);
-        map.setFilter('caution', NONE); map.setFilter('matchline', f); });
-    });
-  }
-
-  async function search(pc) {
-    const msg = $('#search-msg'); msg.className='msg'; msg.textContent='Looking up…';
-    try {
-      const r = await fetch('https://api.postcodes.io/postcodes/'+encodeURIComponent(pc.trim()));
-      if (!r.ok) { msg.className='msg warn'; msg.textContent='Postcode not found.'; return; }
-      const d = (await r.json()).result;
-      const code = d.codes && (d.codes.lsoa21 || d.codes.lsoa);
-      msg.textContent = `${d.postcode} → ${d.lsoa21 || d.lsoa || ''}`;
-      map.flyTo({ center:[d.longitude, d.latitude], zoom:13 });
-      map.once('idle', () => {
-        const fs = map.querySourceFeatures(SRC, { sourceLayer: LYR, filter: ['==',['get','lsoa21cd'], code] });
-        if (fs.length) select(code, fs[0].properties);
-        else { msg.className='msg warn'; msg.textContent = `${d.postcode} is outside England & Wales.`; }
-      });
-    } catch (e) { msg.className='msg warn'; msg.textContent='Lookup failed — check your connection.'; }
-  }
-
-  function buildToggle() {
-    $('#bundle-toggle').innerHTML = BUNDLES.map(b=>`<button role="tab" data-c="${b.code}" aria-selected="${b.code===active}">${b.label}</button>`).join('');
-    $('#bundle-toggle').querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>setBundle(btn.dataset.c)));
-    $('#bundle-desc').textContent = byCodeBundle[active].desc;
-  }
-  function setBundle(code) {
-    active = code;
-    $('#bundle-toggle').querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.c===code)));
-    $('#bundle-desc').textContent = byCodeBundle[code].desc;
-    applyFilter();  // re-applies fill colour / caution / match highlight for the new bundle + current filter
-    if (selected) { const fs = map.querySourceFeatures(SRC,{sourceLayer:LYR,filter:['==',['get','lsoa21cd'],selected]}); if (fs.length) showPanel(fs[0].properties); }
-  }
-  function buildLegend() {
-    $('#legend').innerHTML = `<p class="eyebrow">Crime per resident — standing</p><div class="ramp"></div>
-      <div class="ticks"><span>Lower</span><span>Median</span><span>Top 10%</span><span>Top 1%</span></div>
-      <div class="chips"><span class="lchip"><span class="sw" style="background:${C_LOW};border-style:dashed"></span>Flagged — greyed, not ranked</span></div>
-      <p class="note">Colour = an area's rank within England &amp; Wales for the selected crime types, not an absolute level. <b>Greyed</b> areas are flagged: town/city centres whose per-resident rate is inflated by footfall (visitors, not residents), or very-low-population LSOAs. They're greyed rather than painted red so the map isn't misleading — the real figures are in each area's panel.</p>`;
-  }
-  function buildMethod() {
-    $('#method-body').innerHTML = `<h2>Methodology &amp; sources</h2>
-      <p>Reported crime across England &amp; Wales, counted per neighbourhood (2021 LSOA) and normalised by resident population. Descriptive: numbers and caveats, so you can draw your own conclusions.</p>
-      <h3>What the data is</h3><p>Street-level records from <a href="https://data.police.uk" target="_blank" rel="noopener">police.uk</a> (all ~43 forces) — <b>reported</b> crimes, anonymised, snapped to a nearby point, monthly with a ~1–2 month lag, over a rolling 12 months.</p>
-      <h3>The rate &amp; colour</h3><p>Reported crimes ÷ resident population × 1,000 — per-capita, never raw counts. Areas are coloured by their <b>percentile rank within England &amp; Wales</b>. Highest-rate areas (often town/city centres, where crime against non-residents lifts a per-resident rate) and very-low-population LSOAs are <b>greyed, not painted red</b> — so a footfall-inflated rate doesn't read as the most dangerous place to live. Their real figures and a plain-language note stay in each area's panel, which also shows whether residential crime is rising or falling over the window.</p>
-      <h3>Crime-type bundles</h3><p>What "counts" is a choice: <b>Residential</b> (default), <b>Footfall</b>, or <b>All crime</b>.</p>
-      <h3>Price, rent &amp; yield</h3><p><b>Median sold price</b> per area is from ONS (HPSSA), year to March 2023 — kept at LSOA level. <b>Rent</b> is only published per local authority (ONS PIPR, mean private rent), so <b>gross yield (rent × 12 ÷ price) is an estimate</b> — it borrows the whole local authority's rent and mixes 2026 rent with 2023 price. Treat yield as a relative guide, not a guaranteed return. These are <b>separate layers</b>: we never blend crime, price and yield into a single "score" — you set your own thresholds in <i>Find areas</i>.</p>
-      <h3>Find areas</h3><p>The filter shortlists areas matching your criteria (crime percentile, minimum yield, maximum price), ranked by yield — for buyers and investors who ask "find me areas that are X," not just "what's this area like?"</p>
-      <h3>How it's served</h3><p>~35,000 LSOAs are delivered as vector tiles (PMTiles, generated with tippecanoe) and rendered with MapLibre GL — the browser can't load that many polygons as raw GeoJSON.</p>
-      <h3>Sources, licence &amp; referral links</h3><p>Crime © <a href="https://data.police.uk" target="_blank" rel="noopener">police.uk</a>; population (Census 2021 TS001), 2021 LSOA boundaries, median price (HPSSA) &amp; rent (PIPR) © <a href="https://www.ons.gov.uk" target="_blank" rel="noopener">ONS</a>; postcodes via <a href="https://postcodes.io" target="_blank" rel="noopener">postcodes.io</a> — all under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">Open Government Licence v3</a>. Basemap © CARTO, © OpenStreetMap. Any "Moving to this area?" links are <b>referral links</b> we may earn a fee from — they never change the data, the colours, or the rankings. The visitor count is a lightweight, cookie-free tally (counted once per browser per day), not precise analytics.</p>`;
-  }
-
-  async function initVisits() {
-    const el = $('#visits'); if (!el) return;
-    const eye = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
-    const show = (n, label) => { const lbl = n === 1 ? label.replace(/s$/, '') : label;
-      el.innerHTML = `${eye}${(n || 0).toLocaleString('en-GB')} ${lbl}`; el.style.display = ''; };
-    try {
-      if (VISITS.goatcounter) {  // real unique visitors + dashboard (privacy-friendly, no cookies)
-        const s = document.createElement('script'); s.async = true; s.src = '//gc.zgo.at/count.js';
-        s.setAttribute('data-goatcounter', `https://${VISITS.goatcounter}.goatcounter.com/count`); document.body.appendChild(s);
-        const j = await (await fetch(`https://${VISITS.goatcounter}.goatcounter.com/counter/TOTAL.json`)).json();
-        show(+String(j.count_unique ?? j.count).replace(/[^0-9]/g, ''), 'visitors');
-      } else {  // no-signup fallback: one count per browser per day
-        const today = new Date().toISOString().slice(0, 10);
-        const first = localStorage.getItem('viz-day') !== today;
-        if (first) localStorage.setItem('viz-day', today);
-        const j = await (await fetch(`https://abacus.jasoncameron.dev/${first ? 'hit' : 'get'}/${VISITS.ns}/${VISITS.key}`)).json();
-        show(j.value, 'visits');
-      }
-    } catch (e) { /* counter offline — leave the chip hidden */ }
-  }
-
-  function init() {
-    if (typeof maplibregl === 'undefined' || typeof pmtiles === 'undefined') { fail('Map libraries didn’t load.', 'MapLibre/PMTiles load from a CDN — check the connection and reload.'); return; }
-    const protocol = new pmtiles.Protocol();
-    maplibregl.addProtocol('pmtiles', protocol.tile);
-    const carto = ['a','b','c','d'].map(s=>`https://${s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png`);
-    map = new maplibregl.Map({
-      container:'map', center:[-2.3,52.9], zoom:5.4, attributionControl:false,
-      style:{ version:8, sources:{
-          basemap:{ type:'raster', tiles:carto, tileSize:256, attribution:'© OpenStreetMap © CARTO' },
-          national:{ type:'vector', url:PMTILES_URL } },
-        layers:[
-          { id:'bg', type:'background', paint:{'background-color':'#e9edf2'} },
-          { id:'basemap', type:'raster', source:'basemap' },
-          { id:'fill', type:'fill', source:SRC, 'source-layer':LYR, paint:{ 'fill-color':fillPaint('res'), 'fill-opacity':0.7 } },
-          { id:'matchline', type:'line', source:SRC, 'source-layer':LYR, filter:['==',['get','lsoa21cd'],'__none__'], paint:{ 'line-color':'#312e81','line-width':1.4 } },
-          { id:'caution', type:'line', source:SRC, 'source-layer':LYR, filter:['==',['get','h_res'],true], paint:{ 'line-color':'#5b6b85','line-width':1.0,'line-dasharray':[2,2] } },
-          { id:'sel', type:'line', source:SRC, 'source-layer':LYR, filter:['==',['get','lsoa21cd'],''], paint:{ 'line-color':'#0f1729','line-width':2.5 } },
-        ] },
-    });
-    map.addControl(new maplibregl.NavigationControl({ showCompass:false }), 'top-left');
-    map.addControl(new maplibregl.AttributionControl({ compact:true }));
-    map.on('load', () => { $('#overlay').classList.add('hidden'); const h = location.hash.slice(1); if (/^[EW]01\d{6}$/.test(h)) goToCode(h); });
-    map.on('error', e => { if (e && e.error) console.warn('map error', e.error.message || e.error); });
-    map.on('click', 'fill', e => { const p = e.features[0].properties; select(p.lsoa21cd, p); });
-    const hoverPop = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 8, className: 'hover-pop' });
-    map.on('mousemove', 'fill', e => { map.getCanvas().style.cursor = 'pointer';
-      const p = e.features[0].properties;
-      hoverPop.setLngLat(e.lngLat).setHTML(`<b>${p.lsoa21nm}</b><span class="hp-sub">${p.lsoa21cd}</span>`).addTo(map); });
-    map.on('mouseleave', 'fill', () => { map.getCanvas().style.cursor = ''; hoverPop.remove(); });
-    buildToggle(); buildLegend(); buildMethod();
-    $('#search').addEventListener('submit', e => { e.preventDefault(); const v=$('#postcode').value; if (v.trim()) search(v); });
-    $('#near-me').addEventListener('click', nearMe);
-    ['f-crime', 'f-price', 'f-yield', 'f-sort'].forEach(id => $('#' + id).addEventListener('change', applyFilter));
-    $('#f-clear').addEventListener('click', () => { $('#f-crime').value = '1'; $('#f-price').value = '0'; $('#f-yield').value = '0'; $('#f-sort').value = 'yield'; applyFilter(); });
-    $('#open-method').addEventListener('click', () => $('#method').showModal());
-    window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (/^[EW]01\d{6}$/.test(h) && h !== selected) goToCode(h); });
-    initVisits();
-  }
-  init();
-  </script>
+  <noscript><div class="noscript">Students Map UK needs JavaScript to load place data on request and render the map.</div></noscript>
 </body>
 </html>

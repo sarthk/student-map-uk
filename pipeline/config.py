@@ -24,7 +24,9 @@ NATIONAL_BOUNDARIES_CACHE = INTERIM_DIR / "national-boundaries.geojson"
 NATIONAL_SLIM_GEOJSON = INTERIM_DIR / "national-slim.geojson"   # scalars only → tippecanoe input
 NATIONAL_PMTILES = WEB_DATA_DIR / "national.pmtiles"            # vector tiles (committed)
 NATIONAL_DETAILS = WEB_DATA_DIR / "national-details.json"       # code → {by_category, monthly} (committed)
+NATIONAL_META = WEB_DATA_DIR / "national-meta.json"             # small freshness / coverage summary
 PMTILES_LAYER = "lsoa"                                          # tippecanoe -l → MapLibre source-layer
+CRIME_COVERAGE_MANIFEST = INTERIM_DIR / "crime-coverage.json"   # latest download/build input audit
 
 # --- Price layer (ONS HPSSA Dataset 46 — median price paid by LSOA) -----------
 # A SEPARATE, transparent layer (never blended into a black-box "area score").
@@ -83,8 +85,46 @@ WY_DISTRICTS = ["Leeds", "Bradford", "Kirklees", "Calderdale", "Wakefield"]
 RATE_PER = 1_000
 # Rolling window. LSOA-month counts are tiny/noisy; 12 months stabilises them.
 WINDOW_MONTHS = 12
+# Abort a national build when the raw download is clearly incomplete. Known
+# police.uk submission gaps are surfaced as partial coverage and remain buildable;
+# this threshold is intended to catch interrupted/incorrect downloads.
+MIN_FORCE_MONTH_COVERAGE = 0.90
 # Low-residential trap: tiny denominators produce absurd rates. Flag & grey these.
 LOW_POP_THRESHOLD = 500  # tune later
+
+# The 43 geographic police forces in England and Wales, using police.uk archive
+# slugs. Non-geographic forces (for example British Transport Police) may occur
+# in the archive and are retained in aggregation, but are reported separately in
+# coverage metadata rather than changing the expected denominator each month.
+ENGLAND_WALES_FORCES = (
+    "avon-and-somerset", "bedfordshire", "cambridgeshire", "cheshire",
+    "city-of-london", "cleveland", "cumbria", "derbyshire",
+    "devon-and-cornwall", "dorset", "durham", "dyfed-powys", "essex",
+    "gloucestershire", "greater-manchester", "gwent", "hampshire",
+    "hertfordshire", "humberside", "kent", "lancashire", "leicestershire",
+    "lincolnshire", "merseyside", "metropolitan", "norfolk", "north-wales",
+    "north-yorkshire", "northamptonshire", "northumbria", "nottinghamshire",
+    "south-wales", "south-yorkshire", "staffordshire", "suffolk", "surrey",
+    "sussex", "thames-valley", "warwickshire", "west-mercia",
+    "west-midlands", "west-yorkshire", "wiltshire",
+)
+
+# LSOA display-name prefixes for forces with known source-month gaps. This lets
+# the small public metadata artifact tell the frontend which areas must be
+# withheld instead of presenting an incomplete annual count as low crime.
+FORCE_AREA_NAME_PREFIXES = {
+    "gloucestershire": (
+        "Cheltenham", "Cotswold", "Forest of Dean", "Gloucester", "Stroud",
+        "Tewkesbury",
+    ),
+    "greater-manchester": (
+        "Bolton", "Bury", "Manchester", "Oldham", "Rochdale", "Salford",
+        "Stockport", "Tameside", "Trafford", "Wigan",
+    ),
+    "gwent": (
+        "Blaenau Gwent", "Caerphilly", "Monmouthshire", "Newport", "Torfaen",
+    ),
+}
 
 # --- police.uk crime types (exact, canonical strings) -------------------------
 # These are the standard categories used across the police.uk street CSVs.
