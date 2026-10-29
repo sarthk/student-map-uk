@@ -254,7 +254,7 @@ function mapStyle() {
     sources: {
       carto: {
         type: "raster",
-        tiles: ["https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=cb1_4xp4_1_afea85ef12636303f799ee60"],
+        tiles: ["https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_4xp4_1_afea85ef12636303f799ee60"],
         tileSize: 256,
         attribution: "© CARTO · © OpenStreetMap contributors",
       },
